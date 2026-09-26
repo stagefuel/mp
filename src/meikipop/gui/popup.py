@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 MARK_PLACEHOLDER = '<!--mark-->'  # where a mined entry gets its ✓
 SCROLLBAR_WIDTH = 8
+MINED_COLORS = {'added': '#5FD35F', 'duplicate': '#FF6B6B'}  # fixed so they read the same in every theme
 
 
 class Popup(QWidget):
@@ -586,9 +587,9 @@ class Popup(QWidget):
             logger.info("Popup: click outside, closing.")
             self.unlock()
 
-    def _set_footer(self, text):
+    def _set_footer(self, text, color=None):
         self.footer_label.setText(
-            f'<span style="color:{config.color_foreground}; font-size:{config.font_size_definitions - 2}px;">'
+            f'<span style="color:{color or config.color_foreground}; font-size:{config.font_size_definitions - 2}px;">'
             f'{html.escape(text)}</span>')
         self.footer_label.show()
 
@@ -624,7 +625,10 @@ class Popup(QWidget):
         if index >= len(self._entries):
             return
         if self._mined.get(index) in ('pending', 'added'):
-            self._set_footer("Already added" if self._mined[index] == 'added' else "Adding to Anki…")
+            if self._mined[index] == 'added':
+                self._set_footer("Already added", MINED_COLORS['added'])
+            else:
+                self._set_footer("Adding to Anki…")
             return
         entry = self._entries[index]
         sentence = ankiconnect.extract_sentence(*self._context) if self._context else ''
@@ -651,14 +655,14 @@ class Popup(QWidget):
         if not self.locked:
             return
         self._mined[index] = status
-        mark = {'added': f'<span style="color:{config.color_highlight_reading};"> ✓</span>',
-                'duplicate': f'<span style="color:{config.color_foreground}; opacity:0.6;"> ✓ (in Anki)</span>'}.get(status)
+        mark = {'added': f'<span style="color:{MINED_COLORS["added"]};"> ✓</span>',
+                'duplicate': f'<span style="color:{MINED_COLORS["duplicate"]};"> ✗ already in Anki</span>'}.get(status)
         if mark and index < len(self._entry_htmls):
             self._entry_htmls[index] = self._entry_htmls[index].replace(MARK_PLACEHOLDER, mark, 1)
             scroll = self.scroll_area.verticalScrollBar().value()
             self.display_label.setText(self._join_entries(len(self._entry_htmls)))
             self.scroll_area.verticalScrollBar().setValue(scroll)
-        self._set_footer(message)
+        self._set_footer(message, MINED_COLORS.get(status))
 
     def hide_popup(self):
         # logger.debug(f"hide_popup triggered while visibility:{self.is_visible}")
