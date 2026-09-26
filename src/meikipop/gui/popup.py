@@ -15,6 +15,9 @@ from meikipop.dictionary import freqlist
 from meikipop.dictionary.lookup import DictionaryEntry, KanjiEntry
 from meikipop.gui.magpie_manager import magpie_manager
 
+if IS_WINDOWS:
+    from meikipop.gui import win32_focus
+
 # macOS-specific imports for focus management
 if IS_MACOS:
     try:
@@ -60,6 +63,7 @@ class Popup(QWidget):
         self.mine_click_requested.connect(self._on_mine_click)
         self.scroll_requested.connect(self._on_scroll)
         self.native_handle = None  # hwnd, read by the input hook thread
+        self._previous_foreground = None
         self._mine_finished.connect(self._on_mine_finished)
 
         self.is_visible = False
@@ -618,6 +622,11 @@ class Popup(QWidget):
         self._shown = None
         if IS_WINDOWS:
             self.native_handle = int(self.winId())
+            # take the foreground so games reading raw input / directinput stop seeing our wheel and clicks
+            try:
+                self._previous_foreground = win32_focus.take_foreground(self.native_handle)
+            except Exception:
+                logger.exception("Could not bring the popup to the foreground")
         logger.info(f"Popup locked at {self.geometry()} (dpr {screen.devicePixelRatio()}), "
                     f"{len(self._entries)} entries, scrollable: {needs_scroll}")
 
@@ -636,6 +645,12 @@ class Popup(QWidget):
             self._latest_context = None
         self._last_latest_data = None
         self._entries, self._entry_htmls, self._entry_heights, self._shown = [], [], [], None
+        if IS_WINDOWS and self.native_handle:
+            try:
+                win32_focus.give_back_foreground(self.native_handle, self._previous_foreground)
+            except Exception:
+                logger.exception("Could not return the foreground")
+            self._previous_foreground = None
         self.hide_popup()
         self.shared_state.popup_locked = False
 
