@@ -39,34 +39,36 @@ to maintain this focus, there are a few things meikipop is **not**:
 
 ## installation
 
-there are a few different ways to install and run meikipop. note that when meikipop is started for the first time, a dictionary and ocr models may be downloaded.
+note that when meikipop is started for the first time, the dictionary (~40 mb) and the ocr model are downloaded, so it needs an internet connection once.
 
-### easiest: prepackaged binaries
+### easiest: windows exe
 
-just download, unpack and start the executable binary. no python installation required:
-* https://github.com/rtr46/meikipop/releases/latest
+1. download `meikipop-<version>-windows-x64.exe` from this repo's [releases](https://github.com/stagefuel/mp/releases/latest). no python needed, nothing to install or unpack.
+2. put it wherever you like (e.g. `C:\Programs\meikipop\`) and run it. windows smartscreen may warn that it's from an unknown publisher since it isn't code-signed: *more info → run anyway*.
+3. a console window opens next to the tray icon; leave it open (closing it quits meikipop). settings, the dictionary and a log of the last session (`meikipop.log`) are kept in `%LOCALAPPDATA%\meikipop`.
+4. the first time, select the part of the screen to scan (see [how to use](#how-to-use)).
 
-### recommended: install via pypi
+to update, quit meikipop from the tray and replace the exe; settings are kept.
 
-if you already have python 3.10+ installed, this is the most flexible option that lets you run directly from source, enables you to edit the program and lets you add your own custom ocr providers. 
+### from source (any platform)
 
-```bash
-#... activate your environment if any
-pip install --upgrade meikipop
-meikipop  # run the application
-```
-
-### for development: editable install
-
-if you are planning to modify, fork or contribute to meikipop, it is best to checkout this repo and create an editable install
+requires python 3.10+ and access to this repo. note that `pip install meikipop` installs upstream meikipop, which doesn't have this fork's features.
 
 ```bash
 #... activate your environment if any
-git clone https://github.com/rtr46/meikipop.git
+git clone https://github.com/stagefuel/mp.git meikipop
 cd meikipop
 pip install -e .
 meikipop  # run the application
 ```
+
+to build the windows exe yourself: `pip install pyinstaller`, then `pyinstaller --noconfirm meikipop.win.x64.spec` (the exe ends up in `dist\`).
+
+### setting up this fork's extras
+
+* **anki mining:** install the [AnkiConnect](https://ankiweb.net/shared/info/2055492159) add-on (code `2055492159`) and keep anki running. out of the box, cards go to the `Default` deck as `Basic` notes; pick your own deck, note type and what goes in each field in *settings → anki* (*load decks & note types from anki* fills the lists). to mine: hover a word, **middle click** to lock the popup, **click an entry**; the bottom line turns green when it's added and red if it's already in anki. esc, middle click or clicking elsewhere closes it.
+* **texthooker (websocket):** tick *settings → general → texthooker → send new lines* and point your texthooker page (e.g. kizuna-texthooker-ui) at `ws://localhost:9001`. set the scan area to just the game's text box, keep auto scan on, and don't run textractor/lunahost on the same port at the same time.
+* **jl look:** the popup layout defaults to jl's. to show the same frequency numbers as jl, set *settings → general → frequency list* to jl's `Resources\freqlist_vns.json` (or any nazeka-format list).
 
 ### platform support
 
@@ -109,6 +111,7 @@ here are some tips and recommendations:
 3.  move your mouse over any japanese text on your screen.
 4.  a popup with dictionary entries will appear.
 5.  **right-click the system tray icon** to open the settings, reselect the scan region, change the ocr provider or quit the application.
+6.  to add a word to anki, **middle click** while its popup is open, then **click the entry** (see [setting up this fork's extras](#setting-up-this-forks-extras)).
 
 ## configuration
 
