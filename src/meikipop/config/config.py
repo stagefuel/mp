@@ -47,9 +47,9 @@ class Config:
         },
         'Theme': {
             'theme_name': 'Default',
-            'font_family': '',
-            'font_size_definitions': 14,
-            'font_size_header': 18,
+            'font_family': 'Segoe UI',
+            'font_size_definitions': 26,
+            'font_size_header': 32,
             'compact_mode': True,
             'show_all_glosses': False,
             'show_deconjugation': False,
