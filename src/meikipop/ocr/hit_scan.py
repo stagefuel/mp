@@ -120,4 +120,7 @@ class HitScanner(threading.Thread):
         # else:
         #     config.user_log("hit scan unsuccessful")
 
-        return lookup_string
+        if not lookup_string:
+            return None
+        # the paragraph and position come along so a mined card can carry its sentence
+        return lookup_string, text, char_pos

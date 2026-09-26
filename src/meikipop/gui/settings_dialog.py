@@ -4,8 +4,9 @@ from PyQt6.QtGui import QColor, QIcon, QFontDatabase
 from PyQt6.QtWidgets import (QWidget, QDialog, QFormLayout, QComboBox,
                              QSpinBox, QCheckBox, QPushButton, QColorDialog, QVBoxLayout, QHBoxLayout,
                              QGroupBox, QDialogButtonBox, QLabel, QSlider, QDoubleSpinBox,
-                             QTabWidget, QSizePolicy, QFontComboBox)
+                             QTabWidget, QSizePolicy, QFontComboBox, QLineEdit)
 
+from meikipop.anki import ankiconnect
 from meikipop.dictionary.lookup import Lookup
 from meikipop.config.config import config, APP_NAME, IS_WINDOWS
 from meikipop.gui.input import InputLoop
@@ -328,10 +329,76 @@ class SettingsDialog(QDialog):
         self.tab_appearance_layout.addWidget(color_group)
         self.tab_appearance_layout.addStretch()
 
+        # ==========================================
+        # TAB 4: Anki
+        # ==========================================
+        self.tab_anki = QWidget()
+        self.tab_anki_layout = QVBoxLayout(self.tab_anki)
+
+        anki_group = QGroupBox("Anki Mining")
+        anki_layout = QFormLayout()
+        self.form_layouts.append(anki_layout)
+
+        self.anki_enabled_check = QCheckBox()
+        self.anki_enabled_check.setChecked(config.anki_enabled)
+        anki_layout.addRow("Enable Mining:", self.anki_enabled_check)
+
+        self.anki_url_edit = QLineEdit(config.anki_connect_url)
+        anki_layout.addRow("AnkiConnect URL:", self.anki_url_edit)
+
+        self.anki_deck_combo = QComboBox()
+        self.anki_deck_combo.setEditable(True)
+        self.anki_deck_combo.setCurrentText(config.anki_deck)
+        self._set_expanding(self.anki_deck_combo)
+        anki_layout.addRow("Deck:", self.anki_deck_combo)
+
+        self.anki_model_combo = QComboBox()
+        self.anki_model_combo.setEditable(True)
+        self.anki_model_combo.setCurrentText(config.anki_note_type)
+        self._set_expanding(self.anki_model_combo)
+        anki_layout.addRow("Note Type:", self.anki_model_combo)
+
+        self.anki_tags_edit = QLineEdit(config.anki_tags)
+        self.anki_tags_edit.setPlaceholderText("space separated")
+        anki_layout.addRow("Tags:", self.anki_tags_edit)
+
+        self.anki_duplicates_check = QCheckBox()
+        self.anki_duplicates_check.setChecked(config.anki_allow_duplicates)
+        anki_layout.addRow("Allow Duplicates:", self.anki_duplicates_check)
+
+        self.anki_refresh_button = QPushButton("Load Decks && Note Types from Anki")
+        self.anki_refresh_button.clicked.connect(self._refresh_anki)
+        anki_layout.addRow(self.anki_refresh_button)
+        self.anki_status_label = QLabel("")
+        self.anki_status_label.setWordWrap(True)
+        anki_layout.addRow(self.anki_status_label)
+
+        anki_group.setLayout(anki_layout)
+        self.tab_anki_layout.addWidget(anki_group)
+
+        self.anki_fields_group = QGroupBox("Fields")
+        self.anki_fields_layout = QFormLayout()
+        self.anki_fields_group.setLayout(self.anki_fields_layout)
+        self.tab_anki_layout.addWidget(self.anki_fields_group)
+        self.anki_field_combos = {}
+        self._build_anki_field_rows(ankiconnect.parse_field_map(config.anki_fields))
+
+        hint = QLabel("Middle click an open popup to lock it, then click a word to add it to Anki. "
+                      "Esc, middle click or clicking elsewhere closes it.")
+        hint.setWordWrap(True)
+        self.tab_anki_layout.addWidget(hint)
+        self.tab_anki_layout.addStretch()
+
+        self.anki_model_combo.currentTextChanged.connect(self._on_anki_model_changed)
+        self._anki_loaded = False
+        self.tabs.currentChanged.connect(
+            lambda i: self._refresh_anki() if self.tabs.widget(i) is self.tab_anki and not self._anki_loaded else None)
+
         # Add tabs to main layout
         self.tabs.addTab(self.tab_general, "General")
         self.tabs.addTab(self.tab_content, "Popup Content")
         self.tabs.addTab(self.tab_appearance, "Popup Appearance")
+        self.tabs.addTab(self.tab_anki, "Anki")
         main_layout.addWidget(self.tabs)
 
         # Buttons
@@ -348,6 +415,58 @@ class SettingsDialog(QDialog):
         self._update_auto_scan_state(self.auto_scan_check.isChecked())
         self._update_glens_state(self.ocr_provider_combo.currentText())
         self._update_kanji_options_state(self.show_kanji_check.isChecked())
+
+    # --- Anki tab ---
+    def _current_anki_field_map(self):
+        return {name: combo.currentData() for name, combo in self.anki_field_combos.items()}
+
+    def _build_anki_field_rows(self, field_map):
+        while self.anki_fields_layout.rowCount():
+            self.anki_fields_layout.removeRow(0)
+        self.anki_field_combos = {}
+        for field_name, content in field_map.items():
+            combo = QComboBox()
+            for key, label in ankiconnect.FIELD_CONTENT_TYPES.items():
+                combo.addItem(label, key)
+            combo.setCurrentIndex(max(0, combo.findData(content)))
+            self._set_expanding(combo)
+            self.anki_fields_layout.addRow(f"{field_name}:", combo)
+            self.anki_field_combos[field_name] = combo
+
+    def _with_anki_url(self, func, *args):
+        # the url field may not be saved yet
+        saved_url = config.anki_connect_url
+        config.anki_connect_url = self.anki_url_edit.text().strip()
+        try:
+            return func(*args)
+        finally:
+            config.anki_connect_url = saved_url
+
+    def _refresh_anki(self):
+        self._anki_loaded = True
+        try:
+            decks = self._with_anki_url(ankiconnect.deck_names)
+            models = self._with_anki_url(ankiconnect.model_names)
+        except ankiconnect.AnkiError as e:
+            self.anki_status_label.setText(str(e))
+            return
+        for combo, items in ((self.anki_deck_combo, decks), (self.anki_model_combo, models)):
+            current = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(sorted(items))
+            combo.setCurrentText(current)
+            combo.blockSignals(False)
+        self.anki_status_label.setText(f"Connected to Anki: {len(decks)} decks, {len(models)} note types.")
+        self._on_anki_model_changed(self.anki_model_combo.currentText())
+
+    def _on_anki_model_changed(self, model_name):
+        try:
+            field_names = self._with_anki_url(ankiconnect.model_field_names, model_name)
+        except ankiconnect.AnkiError:
+            return
+        current = self._current_anki_field_map()
+        self._build_anki_field_rows({name: current.get(name, 'nothing') for name in field_names})
 
     def _set_expanding(self, widget):
         """Helper to let a widget expand horizontally"""
@@ -437,6 +556,13 @@ class SettingsDialog(QDialog):
         config.hotkey = self.hotkey_combo.currentText()
         config.glens_low_bandwidth = self.glens_compression_check.isChecked()
         config.max_lookup_length = self.max_lookup_spin.value()
+        config.anki_enabled = self.anki_enabled_check.isChecked()
+        config.anki_connect_url = self.anki_url_edit.text().strip()
+        config.anki_deck = self.anki_deck_combo.currentText()
+        config.anki_note_type = self.anki_model_combo.currentText()
+        config.anki_tags = self.anki_tags_edit.text().strip()
+        config.anki_allow_duplicates = self.anki_duplicates_check.isChecked()
+        config.anki_fields = ankiconnect.format_field_map(self._current_anki_field_map())
         config.auto_scan_mode = self.auto_scan_check.isChecked()
         config.auto_scan_interval_seconds = self.auto_scan_interval_spin.value()
         config.auto_scan_mode_lookups_without_hotkey = self.auto_scan_no_hotkey_check.isChecked()

@@ -6,6 +6,14 @@ https://github.com/user-attachments/assets/a1834197-3059-438c-a2dc-716e8ec9078f
 
 
 
+## this fork (stagefuel/meikipop)
+
+based on upstream v2.0.5, with:
+
+*   **always below cursor:** a popup position mode that never jumps above the mouse; long lookups are cut to fit instead.
+*   **max popup size:** max popup width/height (% of screen) in settings → general.
+*   **anki mining (like [JL](https://github.com/rampaa/JL)):** middle click while a popup is open to lock it in place. while locked, ocr and lookups are paused, every entry is shown (scrollable), and left clicking a headword adds it to anki through [AnkiConnect](https://ankiweb.net/shared/info/2055492159). esc, middle click, or clicking anywhere outside the popup closes it. on windows the middle click and esc are swallowed so the game underneath doesn't react to them. deck, note type, tags, duplicates and the field mapping (word, reading, definitions, first definition, sentence, part of speech, frequency) are in settings → anki. definitions are formatted like JL's: `(1) (n) gloss; gloss<br/>(2) ...`.
+
 ## features
 
 *   **works everywhere:** if you can see it on your screen, you can look it up. no more limitations of browser extensions, hooks or application-specific tools.

@@ -5,8 +5,9 @@ import threading
 import time
 
 from pynput import mouse
+from pynput import keyboard as pynput_keyboard
 
-from meikipop.config.config import config, IS_LINUX, IS_MACOS
+from meikipop.config.config import config, IS_LINUX, IS_MACOS, IS_WINDOWS
 
 if IS_LINUX:
     from Xlib import display as xlib_display
@@ -20,6 +21,11 @@ else:
 
 
 logger = logging.getLogger(__name__)
+
+# win32 messages seen by the low-level hooks
+WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x0100, 0x0101, 0x0104, 0x0105
+WM_MBUTTONDOWN, WM_MBUTTONUP = 0x0207, 0x0208
+VK_ESCAPE = 0x1B
 
 class LinuxX11KeyboardController:
     def __init__(self, hotkey_str):
@@ -150,10 +156,68 @@ class InputLoop(threading.Thread):
 
         self.started_auto_mode = False
 
+        self.popup = None
+        self._suppressing_middle = False
+        self._suppressing_escape = False
+
+    def attach_popup(self, popup):
+        self.popup = popup
+
+    # --- popup locking (middle click) and closing (esc / click outside) ---
+    def _start_listeners(self):
+        mouse_kwargs, key_kwargs = {}, {}
+        if IS_WINDOWS:
+            # on windows the hooks can swallow the input, so the game under the popup doesn't also react to it
+            mouse_kwargs['win32_event_filter'] = self._win32_mouse_filter
+            key_kwargs['win32_event_filter'] = self._win32_key_filter
+        self.mouse_listener = mouse.Listener(on_click=self._on_click, **mouse_kwargs)
+        self.key_listener = pynput_keyboard.Listener(on_press=self._on_key_press, **key_kwargs)
+        self.mouse_listener.start()
+        self.key_listener.start()
+
+    def _popup_accepts_lock_toggle(self):
+        return self.popup is not None and (self.popup.is_visible or self.shared_state.popup_locked)
+
+    def _on_click(self, x, y, button, pressed):
+        if not pressed or self.popup is None:
+            return
+        if button == mouse.Button.middle:
+            if self._popup_accepts_lock_toggle():
+                self.popup.lock_toggle_requested.emit()
+        elif self.shared_state.popup_locked:
+            self.popup.click_while_locked.emit()
+
+    def _on_key_press(self, key):
+        if key == pynput_keyboard.Key.esc and self.shared_state.popup_locked and self.popup is not None:
+            self.popup.escape_pressed.emit()
+
+    def _win32_mouse_filter(self, msg, data):
+        if msg == WM_MBUTTONDOWN and self._popup_accepts_lock_toggle():
+            self._suppressing_middle = True
+            self.popup.lock_toggle_requested.emit()
+            self.mouse_listener.suppress_event()
+        if msg == WM_MBUTTONUP and self._suppressing_middle:
+            self._suppressing_middle = False
+            self.mouse_listener.suppress_event()
+        return True
+
+    def _win32_key_filter(self, msg, data):
+        if data.vkCode != VK_ESCAPE:
+            return True
+        if msg in (WM_KEYDOWN, WM_SYSKEYDOWN) and self.shared_state.popup_locked:
+            self._suppressing_escape = True
+            self.popup.escape_pressed.emit()
+            self.key_listener.suppress_event()
+        if msg in (WM_KEYUP, WM_SYSKEYUP) and self._suppressing_escape:
+            self._suppressing_escape = False
+            self.key_listener.suppress_event()
+        return True
+
     def run(self):
         logger.debug("Input thread started.")
         last_mouse_pos = (0, 0)
         hotkey_was_pressed = False
+        self._start_listeners()
 
         while self.shared_state.running:
             if not config.is_enabled:
@@ -161,6 +225,11 @@ class InputLoop(threading.Thread):
                 continue
             try:
                 current_mouse_pos = self.mouse_controller.position
+
+                # a locked popup freezes the current lookup: no new screenshots, ocr or hit scans
+                if self.shared_state.popup_locked:
+                    last_mouse_pos = current_mouse_pos
+                    continue
                 try:
                     hotkey_is_pressed = self.keyboard_controller.is_hotkey_pressed()
                 except Exception:

@@ -63,6 +63,15 @@ class Config:
             'popup_position_mode': 'always_below',
             'popup_max_width_percent': 40,
             'popup_max_height_percent': 40
+        },
+        'Anki': {
+            'anki_enabled': True,
+            'anki_connect_url': 'http://127.0.0.1:8765',
+            'anki_deck': 'VN vocab',
+            'anki_note_type': 'core2.3k-anime-card',
+            'anki_fields': 'Word=word;Reading=reading;Glossary=definitions',
+            'anki_tags': '',
+            'anki_allow_duplicates': False
         }
     }
 

@@ -43,6 +43,9 @@ class SharedState:
         # screen lock - used by screen manager and popup
         self.screen_lock = threading.RLock()
 
+        # set while the popup is locked in place for mining; pauses ocr and lookups
+        self.popup_locked = False
+
 
 def run_gui():
     setup_logging()

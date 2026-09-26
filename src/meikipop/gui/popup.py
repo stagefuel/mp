@@ -1,13 +1,15 @@
 # meikipop/gui/popup.py
+import html
 import logging
 import threading
 from typing import List, Optional
 
-from PyQt6.QtCore import QTimer, QPoint, QSize
+from PyQt6.QtCore import QTimer, QPoint, QSize, pyqtSignal
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontMetrics, QFontInfo
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QApplication
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QApplication, QScrollArea
 
+from meikipop.anki import ankiconnect
 from meikipop.config.config import config, IS_MACOS
 from meikipop.dictionary.lookup import DictionaryEntry, KanjiEntry
 from meikipop.gui.magpie_manager import magpie_manager
@@ -21,17 +23,37 @@ if IS_MACOS:
 
 logger = logging.getLogger(__name__)
 
+MARK_PLACEHOLDER = '<!--mark-->'  # where a mined entry gets its ✓
+SCROLLBAR_WIDTH = 8
+
 
 class Popup(QWidget):
+    # emitted from the input hook threads, handled on the gui thread
+    lock_toggle_requested = pyqtSignal()
+    click_while_locked = pyqtSignal()
+    escape_pressed = pyqtSignal()
+    _mine_finished = pyqtSignal(int, str, str)  # entry index, status, message
+
     def __init__(self, shared_state, input_loop):
         super().__init__()
         self._latest_data = None
+        self._latest_context = None
+        self._context = None  # (paragraph text, char index) of the lookup being shown
         self._last_latest_data = None
         self._data_lock = threading.Lock()
         self._previous_active_window_on_mac = None
 
         self.shared_state = shared_state
         self.input_loop = input_loop
+        input_loop.attach_popup(self)
+
+        # mining mode: middle click locks the popup in place, clicking a headword adds it to anki
+        self.locked = False
+        self._mined = {}  # entry index -> 'pending' | 'added' | 'duplicate' | 'failed'
+        self.lock_toggle_requested.connect(self.toggle_lock)
+        self.click_while_locked.connect(self._on_click_while_locked)
+        self.escape_pressed.connect(self.unlock)
+        self._mine_finished.connect(self._on_mine_finished)
 
         self.is_visible = False
         self.timer = QTimer(self)
@@ -47,6 +69,7 @@ class Popup(QWidget):
         self.def_chars_per_line = 50
 
         # per-lookup layout, so the popup can drop trailing entries to fit a height limit
+        self._entries = []
         self._entry_htmls = []
         self._entry_heights = []  # content height when showing the first n+1 entries
         self._content_width = 0
@@ -56,6 +79,7 @@ class Popup(QWidget):
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.Tool |
+            Qt.WindowType.WindowDoesNotAcceptFocus |  # clicking it to mine must not take focus from the game
             Qt.WindowType.X11BypassWindowManagerHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -76,7 +100,22 @@ class Popup(QWidget):
         self.display_label.setTextFormat(Qt.TextFormat.RichText)
         # if a single entry is taller than the allowed height, clip its bottom rather than its middle
         self.display_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.content_layout.addWidget(self.display_label)
+        self.display_label.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.display_label.linkActivated.connect(self._on_link_activated)
+
+        # scrolling is only turned on while locked, when all entries are shown
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setWidget(self.display_label)
+        self.content_layout.addWidget(self.scroll_area)
+
+        self.footer_label = QLabel()
+        self.footer_label.setWordWrap(True)
+        self.footer_label.hide()
+        self.content_layout.addWidget(self.footer_label)
 
         self.hide()
 
@@ -96,6 +135,27 @@ class Popup(QWidget):
                 background-color: transparent;
                 border: none;
                 font-family: "{config.font_family}";
+            }}
+            QScrollArea, QScrollArea > QWidget > QWidget {{
+                background-color: transparent;
+                border: none;
+            }}
+            QScrollBar:vertical {{
+                background: transparent;
+                width: {SCROLLBAR_WIDTH}px;
+                margin: 0px;
+                border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background: rgba(128, 128, 128, 160);
+                border-radius: {SCROLLBAR_WIDTH // 2}px;
+                min-height: 20px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
             }}
             hr {{
                 border: none;
@@ -158,9 +218,10 @@ class Popup(QWidget):
 
         return best_fit if best_fit > 0 else 50
 
-    def set_latest_data(self, data):
+    def set_latest_data(self, data, context=None):
         with self._data_lock:
             self._latest_data = data
+            self._latest_context = context
 
     def get_latest_data(self):
         with self._data_lock:
@@ -170,9 +231,14 @@ class Popup(QWidget):
         if not self.is_calibrated:
             self._calibrate_empirically()
 
+        if self.locked:
+            return  # frozen until unlocked; anything looked up meanwhile is dropped on unlock
+
         latest_data = self.get_latest_data()
         if latest_data and latest_data != self._last_latest_data:
             # update popup content
+            with self._data_lock:
+                self._context = self._latest_context
             self._calculate_content_and_size_char_count(latest_data)
         self._last_latest_data = latest_data
 
@@ -184,7 +250,11 @@ class Popup(QWidget):
         mouse_pos = QCursor.pos()
         self.move_to(mouse_pos.x(), mouse_pos.y())
 
-    def _render_kanji_entry(self, entry: KanjiEntry):
+    @staticmethod
+    def _mine_link(index, inner_html):
+        return f'<a href="mine:{index}" style="text-decoration: none;">{inner_html}</a>'
+
+    def _render_kanji_entry(self, entry: KanjiEntry, index: int):
         # Colors and sizes from config
         c_word = config.color_highlight_word
         c_read = config.color_highlight_reading
@@ -197,8 +267,8 @@ class Popup(QWidget):
         readings_str = f"[{readings_str}]"
 
         header_html = f"""
-                    <span style="font-size:{fs_head}px; color:{c_word}; padding-right: 8px;">{entry.character}</span>
-                    <span style="font-size:{fs_head - 2}px; color:{c_read};"> {readings_str}</span>
+                    {self._mine_link(index, f'<span style="font-size:{fs_head}px; color:{c_word}; padding-right: 8px;">{entry.character}</span>')}
+                    <span style="font-size:{fs_head - 2}px; color:{c_read};"> {readings_str}</span>{MARK_PLACEHOLDER}
         """
 
         meanings_str = ", ".join(entry.meanings)
@@ -238,9 +308,10 @@ class Popup(QWidget):
         """
 
     def _calculate_content_and_size_char_count(self, entries: Optional[List[DictionaryEntry]]):
-        self._entry_htmls, self._entry_heights, self._shown = [], [], None
+        self._entries, self._entry_htmls, self._entry_heights, self._shown = [], [], [], None
         if not self.is_calibrated: return
         if not entries: return
+        self._entries = list(entries)
 
         all_html_parts = []
         max_ratio = 0.0
@@ -254,7 +325,7 @@ class Popup(QWidget):
 
                 max_ratio = max(max_ratio, 0.7)
 
-                all_html_parts.append(self._render_kanji_entry(entry))
+                all_html_parts.append(self._render_kanji_entry(entry, i))
                 continue
 
             header_text_calc = entry.written_form
@@ -263,7 +334,7 @@ class Popup(QWidget):
             max_ratio = max(max_ratio, header_ratio)
 
             # --- HTML construction ---
-            header_html = f'<span style="color: {config.color_highlight_word}; font-size:{config.font_size_header}px;">{entry.written_form}</span>'
+            header_html = self._mine_link(i, f'<span style="color: {config.color_highlight_word}; font-size:{config.font_size_header}px;">{entry.written_form}</span>')
             if entry.reading: header_html += f' <span style="color: {config.color_highlight_reading}; font-size:{config.font_size_header - 2}px;">[{entry.reading}]</span>'
             if entry.deconjugation_process and config.show_deconjugation:
                 deconj_str = " ← ".join(p for p in entry.deconjugation_process if p)
@@ -271,6 +342,7 @@ class Popup(QWidget):
                     header_html += f' <span style="color:{config.color_foreground}; font-size:{config.font_size_definitions - 2}px; opacity:0.8;">({deconj_str})</span>'
             if config.show_frequency and entry.freq < 999_999:
                 header_html += f' <span style="color:{config.color_foreground}; font-size:{config.font_size_definitions - 2}px; opacity:0.6;">#{entry.freq}</span>'
+            header_html += MARK_PLACEHOLDER
             def_text_parts_calc = []
             def_text_parts_html = []
             for idx, sense in enumerate(entry.senses):
@@ -445,6 +517,116 @@ class Popup(QWidget):
 
         self.move(int(final_x), int(final_y))
 
+    # --- mining mode ---
+    def toggle_lock(self):
+        if self.locked:
+            self.unlock()
+        elif self.is_visible and self._entry_htmls:
+            self.lock()
+
+    def lock(self):
+        self.locked = True
+        self.shared_state.popup_locked = True
+        self._mined = {}
+        logger.info("Popup locked for mining.")
+
+        # show every entry, scrollable, keeping the popup where it is
+        horizontal_padding, vertical_padding = self._padding()
+        self.display_label.setText(self._join_entries(len(self._entry_htmls)))
+        self._set_footer("Click a word to add it to Anki  ·  Esc / middle click to close"
+                         if config.anki_enabled else "Esc / middle click to close")
+        footer_height = self.footer_label.heightForWidth(self._content_width) + self.content_layout.spacing()
+        full_height = self._entry_heights[-1] + footer_height + vertical_padding
+
+        screen = QApplication.screenAt(self.geometry().center()) or QApplication.primaryScreen()
+        screen_geo = screen.geometry()
+        max_height = screen_geo.height() if config.popup_max_height_percent <= 0 \
+            else int(screen_geo.height() * config.popup_max_height_percent / 100)
+        max_height = min(max_height, screen_geo.bottom() - self.y())
+        height = min(full_height, max(max_height, self.height()))
+
+        needs_scroll = full_height > height
+        self.scroll_area.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn if needs_scroll else Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        width = self._content_width + horizontal_padding + (SCROLLBAR_WIDTH if needs_scroll else 0)
+        # keep the right edge on screen if the scrollbar made it wider
+        if self.x() + width > screen_geo.right():
+            self.move(screen_geo.right() - width, self.y())
+        self.setFixedSize(QSize(width, height))
+        self.scroll_area.verticalScrollBar().setValue(0)
+        self._shown = None
+
+    def unlock(self):
+        if not self.locked:
+            return
+        self.locked = False
+        logger.info("Popup unlocked.")
+        self.footer_label.hide()
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.verticalScrollBar().setValue(0)
+        # drop whatever was looked up while locked; the next mouse move starts fresh
+        with self._data_lock:
+            self._latest_data = None
+            self._latest_context = None
+        self._last_latest_data = None
+        self._entries, self._entry_htmls, self._entry_heights, self._shown = [], [], [], None
+        self.hide_popup()
+        self.shared_state.popup_locked = False
+
+    def _on_click_while_locked(self):
+        # clicks inside the popup are for mining/scrolling; anywhere else closes it
+        if not self.geometry().contains(QCursor.pos()):
+            self.unlock()
+
+    def _set_footer(self, text):
+        self.footer_label.setText(
+            f'<span style="color:{config.color_foreground}; font-size:{config.font_size_definitions - 2}px;">'
+            f'{html.escape(text)}</span>')
+        self.footer_label.show()
+
+    def _on_link_activated(self, link):
+        if not self.locked or not link.startswith('mine:'):
+            return
+        if not config.anki_enabled:
+            self._set_footer("Anki mining is turned off in Settings")
+            return
+        index = int(link.split(':', 1)[1])
+        if index >= len(self._entries) or self._mined.get(index) in ('pending', 'added'):
+            return
+        entry = self._entries[index]
+        sentence = ankiconnect.extract_sentence(*self._context) if self._context else ''
+        self._mined[index] = 'pending'
+        self._set_footer("Adding to Anki…")
+        threading.Thread(target=self._mine_worker, args=(index, entry, sentence), daemon=True,
+                         name="AnkiMine").start()
+
+    def _mine_worker(self, index, entry, sentence):
+        word = getattr(entry, 'written_form', None) or getattr(entry, 'character', '')
+        try:
+            ankiconnect.add_note(entry, sentence)
+            self._mine_finished.emit(index, 'added', f"Added {word} to {config.anki_deck}")
+        except ankiconnect.DuplicateNoteError:
+            self._mine_finished.emit(index, 'duplicate', f"{word} is already in Anki")
+        except ankiconnect.AnkiError as e:
+            logger.warning(f"Anki: could not add '{word}': {e}")
+            self._mine_finished.emit(index, 'failed', f"Anki: {e}")
+        except Exception as e:
+            logger.exception("Anki: unexpected error while mining")
+            self._mine_finished.emit(index, 'failed', f"Anki error: {e}")
+
+    def _on_mine_finished(self, index, status, message):
+        if not self.locked:
+            return
+        self._mined[index] = status
+        mark = {'added': f'<span style="color:{config.color_highlight_reading};"> ✓</span>',
+                'duplicate': f'<span style="color:{config.color_foreground}; opacity:0.6;"> ✓ (in Anki)</span>'}.get(status)
+        if mark and index < len(self._entry_htmls):
+            self._entry_htmls[index] = self._entry_htmls[index].replace(MARK_PLACEHOLDER, mark, 1)
+            scroll = self.scroll_area.verticalScrollBar().value()
+            self.display_label.setText(self._join_entries(len(self._entry_htmls)))
+            self.scroll_area.verticalScrollBar().setValue(scroll)
+        self._set_footer(message)
+
     def hide_popup(self):
         # logger.debug(f"hide_popup triggered while visibility:{self.is_visible}")
         if not self.is_visible:
@@ -476,6 +658,7 @@ class Popup(QWidget):
 
     def reapply_settings(self):
         logger.debug("Popup: Re-applying settings and triggering font recalibration.")
+        self.unlock()
         self._apply_frame_stylesheet()
         # By setting is_calibrated to False, the main loop will automatically
         # run _calibrate_empirically() again with the new font settings.
