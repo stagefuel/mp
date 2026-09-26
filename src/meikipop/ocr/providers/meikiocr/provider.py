@@ -7,6 +7,7 @@ from PIL import Image
 
 # Import the MeikiOCR library
 from meikiocr import MeikiOCR
+from meikiocr import ocr as meikiocr_module
 
 # Import the "contract" classes from your application's interface
 from meikipop.ocr.interface import BoundingBox, OcrProvider, Paragraph, Word
@@ -20,6 +21,13 @@ DET_CONFIDENCE_THRESHOLD = 0.5
 REC_CONFIDENCE_THRESHOLD = 0.1
 
 JAPANESE_REGEX = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]')
+
+# the recognition model reads some bound compounds (characters that almost only occur together) in reverse;
+# meikiocr fixes the ones it knows about in SWAPPED_PAIRS, these are ones found since
+EXTRA_SWAPPED_PAIRS = {
+    "髏髑": "髑髏",
+}
+meikiocr_module.SWAPPED_PAIRS.update(EXTRA_SWAPPED_PAIRS)
 
 
 class MeikiOcrProvider(OcrProvider):
