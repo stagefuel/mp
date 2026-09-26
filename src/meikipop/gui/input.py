@@ -1,4 +1,6 @@
 # meikipop/gui/input.py
+import ctypes
+import ctypes.wintypes
 import logging
 import sys
 import threading
@@ -24,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # win32 messages seen by the low-level hooks
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x0100, 0x0101, 0x0104, 0x0105
-WM_MBUTTONDOWN, WM_MBUTTONUP = 0x0207, 0x0208
+WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEWHEEL = 0x0201, 0x0202, 0x0207, 0x0208, 0x020A
 VK_ESCAPE = 0x1B
 
 class LinuxX11KeyboardController:
@@ -191,7 +193,26 @@ class InputLoop(threading.Thread):
         if key == pynput_keyboard.Key.esc and self.shared_state.popup_locked and self.popup is not None:
             self.popup.escape_pressed.emit()
 
+    def _point_in_locked_popup(self, x, y):
+        # both the hook's point and GetWindowRect are physical pixels (qt makes the process per-monitor dpi aware)
+        hwnd = self.popup.native_handle
+        if not hwnd:
+            return False
+        rect = ctypes.wintypes.RECT()
+        if not ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            return False
+        return rect.left <= x < rect.right and rect.top <= y < rect.bottom
+
     def _win32_mouse_filter(self, msg, data):
+        # while locked, clicks and scrolling inside the popup are handled here instead of relying on the
+        # popup window getting them itself, and are swallowed so nothing underneath reacts
+        if (self.shared_state.popup_locked and msg in (WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEWHEEL)
+                and self._point_in_locked_popup(data.pt.x, data.pt.y)):
+            if msg == WM_LBUTTONDOWN:
+                self.popup.mine_click_requested.emit()
+            elif msg == WM_MOUSEWHEEL:
+                self.popup.scroll_requested.emit(ctypes.c_short(data.mouseData >> 16).value)
+            self.mouse_listener.suppress_event()
         if msg == WM_MBUTTONDOWN and self._popup_accepts_lock_toggle():
             self._suppressing_middle = True
             self.popup.lock_toggle_requested.emit()

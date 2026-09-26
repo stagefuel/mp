@@ -1,8 +1,10 @@
 # meikipop/utils/logger.py
 import logging
+import os
 import sys
 
 from meikipop.config.config import APP_NAME
+from meikipop.utils.paths import paths
 
 TRACE_LEVEL_NUM = 5
 logging.addLevelName(TRACE_LEVEL_NUM, "TRACE")
@@ -30,3 +32,11 @@ def setup_logging():
     if logger.hasHandlers():
         logger.handlers.clear()
     logger.addHandler(handler)
+
+    # also keep the last session's log in a file, for when the console isn't at hand
+    try:
+        file_handler = logging.FileHandler(os.path.join(paths.data_dir, 'meikipop.log'), mode='w', encoding='utf-8')
+        file_handler.setFormatter(log_formatter)
+        logger.addHandler(file_handler)
+    except OSError:
+        pass

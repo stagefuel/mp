@@ -10,7 +10,7 @@ from PyQt6.QtGui import QColor, QCursor, QFont, QFontMetrics, QFontInfo
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QApplication, QScrollArea
 
 from meikipop.anki import ankiconnect
-from meikipop.config.config import config, IS_MACOS
+from meikipop.config.config import config, IS_MACOS, IS_WINDOWS
 from meikipop.dictionary.lookup import DictionaryEntry, KanjiEntry
 from meikipop.gui.magpie_manager import magpie_manager
 
@@ -32,6 +32,8 @@ class Popup(QWidget):
     lock_toggle_requested = pyqtSignal()
     click_while_locked = pyqtSignal()
     escape_pressed = pyqtSignal()
+    mine_click_requested = pyqtSignal()  # windows: left click inside the locked popup, seen by the mouse hook
+    scroll_requested = pyqtSignal(int)  # windows: wheel delta inside the locked popup
     _mine_finished = pyqtSignal(int, str, str)  # entry index, status, message
 
     def __init__(self, shared_state, input_loop):
@@ -53,6 +55,9 @@ class Popup(QWidget):
         self.lock_toggle_requested.connect(self.toggle_lock)
         self.click_while_locked.connect(self._on_click_while_locked)
         self.escape_pressed.connect(self.unlock)
+        self.mine_click_requested.connect(self._on_mine_click)
+        self.scroll_requested.connect(self._on_scroll)
+        self.native_handle = None  # hwnd, read by the input hook thread
         self._mine_finished.connect(self._on_mine_finished)
 
         self.is_visible = False
@@ -552,6 +557,10 @@ class Popup(QWidget):
         self.setFixedSize(QSize(width, height))
         self.scroll_area.verticalScrollBar().setValue(0)
         self._shown = None
+        if IS_WINDOWS:
+            self.native_handle = int(self.winId())
+        logger.info(f"Popup locked at {self.geometry()} (dpr {screen.devicePixelRatio()}), "
+                    f"{len(self._entries)} entries, scrollable: {needs_scroll}")
 
     def unlock(self):
         if not self.locked:
@@ -574,6 +583,7 @@ class Popup(QWidget):
     def _on_click_while_locked(self):
         # clicks inside the popup are for mining/scrolling; anywhere else closes it
         if not self.geometry().contains(QCursor.pos()):
+            logger.info("Popup: click outside, closing.")
             self.unlock()
 
     def _set_footer(self, text):
@@ -582,13 +592,25 @@ class Popup(QWidget):
             f'{html.escape(text)}</span>')
         self.footer_label.show()
 
+    def _on_mine_click(self):
+        pos = self.display_label.mapFromGlobal(QCursor.pos())
+        logger.info(f"Mining: click in popup at label y={pos.y()}")
+        if self.display_label.rect().contains(pos):
+            self._mine(self._entry_index_at(pos.y()))
+
+    def _on_scroll(self, delta):
+        scroll_bar = self.scroll_area.verticalScrollBar()
+        scroll_bar.setValue(scroll_bar.value() - int(delta / 120 * 60))
+
+    def _entry_index_at(self, y):
+        # _entry_heights[i] is where entry i ends, in label coordinates (scrolling included)
+        return next((i for i, h in enumerate(self._entry_heights) if y <= h), len(self._entry_heights) - 1)
+
     def eventFilter(self, obj, event):
-        if (obj is self.display_label and self.locked and event.type() == QEvent.Type.MouseButtonRelease
+        # on windows clicks come through the input hook instead (_on_mine_click)
+        if (not IS_WINDOWS and obj is self.display_label and self.locked and event.type() == QEvent.Type.MouseButtonRelease
                 and event.button() == Qt.MouseButton.LeftButton):
-            # _entry_heights[i] is where entry i ends, in label coordinates (scrolling included)
-            y = event.position().y()
-            index = next((i for i, h in enumerate(self._entry_heights) if y <= h), len(self._entry_heights) - 1)
-            self._mine(index)
+            self._mine(self._entry_index_at(event.position().y()))
             return True
         return super().eventFilter(obj, event)
 
