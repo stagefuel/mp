@@ -46,6 +46,12 @@ class Popup(QWidget):
         self.header_chars_per_line = 50
         self.def_chars_per_line = 50
 
+        # per-lookup layout, so the popup can drop trailing entries to fit a height limit
+        self._entry_htmls = []
+        self._entry_heights = []  # content height when showing the first n+1 entries
+        self._content_width = 0
+        self._shown = None  # (entry count, height) currently displayed
+
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
@@ -68,6 +74,8 @@ class Popup(QWidget):
         self.display_label = QLabel()
         self.display_label.setWordWrap(True)
         self.display_label.setTextFormat(Qt.TextFormat.RichText)
+        # if a single entry is taller than the allowed height, clip its bottom rather than its middle
+        self.display_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.content_layout.addWidget(self.display_label)
 
         self.hide()
@@ -113,7 +121,7 @@ class Popup(QWidget):
         horizontal_padding = margins.left() + margins.right() + (border_width * 2)
 
         screen = QApplication.primaryScreen()
-        self.max_content_width = (int(screen.geometry().width() * 0.4)) - horizontal_padding
+        self.max_content_width = (int(screen.geometry().width() * config.popup_max_width_percent / 100)) - horizontal_padding
 
         header_font = QFont(config.font_family)
         header_font.setPixelSize(config.font_size_header)
@@ -165,9 +173,7 @@ class Popup(QWidget):
         latest_data = self.get_latest_data()
         if latest_data and latest_data != self._last_latest_data:
             # update popup content
-            full_html, new_size = self._calculate_content_and_size_char_count(latest_data)
-            self.display_label.setText(full_html)
-            self.setFixedSize(new_size)
+            self._calculate_content_and_size_char_count(latest_data)
         self._last_latest_data = latest_data
 
         if self._latest_data and self.input_loop.is_virtual_hotkey_down() and config.is_enabled:
@@ -231,18 +237,15 @@ class Popup(QWidget):
         </div>
         """
 
-    def _calculate_content_and_size_char_count(self, entries: Optional[List[DictionaryEntry]]) -> tuple[
-        Optional[str], Optional[QSize]]:
-        if not self.is_calibrated: return None, None
-        if not entries: return None, None
+    def _calculate_content_and_size_char_count(self, entries: Optional[List[DictionaryEntry]]):
+        self._entry_htmls, self._entry_heights, self._shown = [], [], None
+        if not self.is_calibrated: return
+        if not entries: return
 
         all_html_parts = []
         max_ratio = 0.0
 
         for i, entry in enumerate(entries):
-            if i > 0:
-                all_html_parts.append('<hr style="margin-top: 0px; margin-bottom: 0px;">')
-
             if isinstance(entry, KanjiEntry):
                 header_definition = ', '.join(
                     entry.meanings) if config.show_examples or config.show_components else '[字]'
@@ -310,33 +313,71 @@ class Popup(QWidget):
         optimal_content_width = self.max_content_width * min(1.0, max_ratio)
         optimal_content_width = max(optimal_content_width, 200)
 
-        full_html = "".join(all_html_parts)
-        self.probe_label.setText(full_html)
+        self._entry_htmls = all_html_parts
+        self._content_width = int(optimal_content_width)
+        for n in range(1, len(all_html_parts) + 1):
+            self.probe_label.setText(self._join_entries(n))
+            self._entry_heights.append(self.probe_label.heightForWidth(self._content_width))
 
-        final_height = self.probe_label.heightForWidth(int(optimal_content_width))
-
+    def _padding(self):
         margins = self.content_layout.contentsMargins()
         border_width = 1
-        horizontal_padding = margins.left() + margins.right() + (border_width * 2)
-        vertical_padding = margins.top() + margins.bottom() + (border_width * 2)
+        return (margins.left() + margins.right() + (border_width * 2),
+                margins.top() + margins.bottom() + (border_width * 2))
 
-        final_size = QSize(int(optimal_content_width) + horizontal_padding, final_height + vertical_padding)
-        return full_html, final_size
+    def _join_entries(self, n):
+        return '<hr style="margin-top: 0px; margin-bottom: 0px;">'.join(self._entry_htmls[:n])
+
+    def _fit_to_height(self, max_height):
+        """Show as many entries as fit within max_height (at least one, clipped if need be)."""
+        if not self._entry_htmls:
+            return
+        horizontal_padding, vertical_padding = self._padding()
+        max_content_height = max_height - vertical_padding
+
+        count = 1
+        for n, h in enumerate(self._entry_heights, start=1):
+            if h <= max_content_height:
+                count = n
+        height = min(self._entry_heights[count - 1], max_content_height) + vertical_padding
+
+        if self._shown == (count, height):
+            return
+        if self._shown is None or self._shown[0] != count:
+            self.display_label.setText(self._join_entries(count))
+        self.setFixedSize(QSize(self._content_width + horizontal_padding, height))
+        self._shown = (count, height)
 
     def move_to(self, x, y):
         cursor_point = QPoint(x, y)
         screen = QApplication.screenAt(cursor_point) or QApplication.primaryScreen()
         screen_geo = screen.geometry()
-        popup_size = self.size()
         offset = 15
 
         ratio = screen.devicePixelRatio()
         x, y = magpie_manager.transform_raw_to_visual((int(x), int(y)), ratio)
 
-        # --- Positioning logic based on mode ---
+        # --- Size limit ---
         mode = config.popup_position_mode
+        max_height = screen_geo.height() if config.popup_max_height_percent <= 0 \
+            else int(screen_geo.height() * config.popup_max_height_percent / 100)
+        if mode == 'always_below':
+            # shrink to the space under the cursor instead of ever moving above it;
+            # only near the very bottom of the screen is it pushed up to stay readable
+            min_height = 120
+            space_below = screen_geo.bottom() - (y + offset)
+            max_height = max(min(max_height, space_below), min_height)
+        self._fit_to_height(max_height)
+        popup_size = self.size()
 
-        if mode == 'visual_novel_mode':
+        # --- Positioning logic based on mode ---
+        if mode == 'always_below':
+            # X: Flip, Y: always below the cursor
+            preferred_x = x + offset
+            final_x = preferred_x if preferred_x + popup_size.width() <= screen_geo.right() else x - popup_size.width() - offset
+            final_y = y + offset
+
+        elif mode == 'visual_novel_mode':
             # --- Vertical Position (VN Mode) ---
             screen_height = screen_geo.height()
             cursor_y_in_screen = y - screen_geo.top()
@@ -439,6 +480,7 @@ class Popup(QWidget):
         # By setting is_calibrated to False, the main loop will automatically
         # run _calibrate_empirically() again with the new font settings.
         self.is_calibrated = False
+        self._last_latest_data = None  # re-layout the current lookup with the new size limits
 
     def _store_active_window_on_mac(self):
         """Store the currently active window for focus restoration (macOS only)."""

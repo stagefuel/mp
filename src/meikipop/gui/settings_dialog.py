@@ -151,8 +151,9 @@ class SettingsDialog(QDialog):
         self.form_layouts.append(behavior_layout)
 
         self.popup_position_combo = QComboBox()
-        self.popup_position_combo.addItems(["Flip Both", "Flip Vertically", "Flip Horizontally", "Visual Novel Mode"])
+        self.popup_position_combo.addItems(["Always Below Cursor", "Flip Both", "Flip Vertically", "Flip Horizontally", "Visual Novel Mode"])
         self.popup_mode_map = {
+            "Always Below Cursor": "always_below",
             "Flip Both": "flip_both",
             "Flip Vertically": "flip_vertically",
             "Flip Horizontally": "flip_horizontally",
@@ -164,6 +165,19 @@ class SettingsDialog(QDialog):
         self.popup_position_combo.setCurrentText(current_friendly_name)
         self._set_expanding(self.popup_position_combo)
         behavior_layout.addRow("Position Mode:", self.popup_position_combo)
+
+        self.max_width_spin = QSpinBox()
+        self.max_width_spin.setRange(10, 100)
+        self.max_width_spin.setSuffix(" % of screen")
+        self.max_width_spin.setValue(config.popup_max_width_percent)
+        behavior_layout.addRow("Max Popup Width:", self.max_width_spin)
+
+        self.max_height_spin = QSpinBox()
+        self.max_height_spin.setRange(0, 100)
+        self.max_height_spin.setSuffix(" % of screen")
+        self.max_height_spin.setSpecialValueText("No limit")
+        self.max_height_spin.setValue(config.popup_max_height_percent)
+        behavior_layout.addRow("Max Popup Height:", self.max_height_spin)
 
         self.compact_check = QCheckBox()
         self.compact_check.setChecked(config.compact_mode)
@@ -442,6 +456,8 @@ class SettingsDialog(QDialog):
 
         selected_friendly_name = self.popup_position_combo.currentText()
         config.popup_position_mode = self.popup_mode_map.get(selected_friendly_name, "flip_vertically")
+        config.popup_max_width_percent = self.max_width_spin.value()
+        config.popup_max_height_percent = self.max_height_spin.value()
         config.theme_name = self.theme_combo.currentText()
         config.background_opacity = self.opacity_slider.value()
         config.font_family = self.font_family_combo.currentFont().family()
