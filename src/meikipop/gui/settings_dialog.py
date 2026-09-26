@@ -383,7 +383,7 @@ class SettingsDialog(QDialog):
         self.anki_field_combos = {}
         self._build_anki_field_rows(ankiconnect.parse_field_map(config.anki_fields))
 
-        hint = QLabel("Middle click an open popup to lock it, then click a word to add it to Anki. "
+        hint = QLabel("Middle click an open popup to lock it, then click an entry to add it to Anki. "
                       "Esc, middle click or clicking elsewhere closes it.")
         hint.setWordWrap(True)
         self.tab_anki_layout.addWidget(hint)

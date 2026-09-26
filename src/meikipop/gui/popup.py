@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import List, Optional
 
-from PyQt6.QtCore import QTimer, QPoint, QSize, pyqtSignal
+from PyQt6.QtCore import QTimer, QPoint, QSize, QEvent, pyqtSignal
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontMetrics, QFontInfo
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QApplication, QScrollArea
@@ -100,8 +100,8 @@ class Popup(QWidget):
         self.display_label.setTextFormat(Qt.TextFormat.RichText)
         # if a single entry is taller than the allowed height, clip its bottom rather than its middle
         self.display_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.display_label.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
-        self.display_label.linkActivated.connect(self._on_link_activated)
+        # clicking anywhere on an entry mines it (only while locked)
+        self.display_label.installEventFilter(self)
 
         # scrolling is only turned on while locked, when all entries are shown
         self.scroll_area = QScrollArea()
@@ -250,10 +250,6 @@ class Popup(QWidget):
         mouse_pos = QCursor.pos()
         self.move_to(mouse_pos.x(), mouse_pos.y())
 
-    @staticmethod
-    def _mine_link(index, inner_html):
-        return f'<a href="mine:{index}" style="text-decoration: none;">{inner_html}</a>'
-
     def _render_kanji_entry(self, entry: KanjiEntry, index: int):
         # Colors and sizes from config
         c_word = config.color_highlight_word
@@ -267,7 +263,7 @@ class Popup(QWidget):
         readings_str = f"[{readings_str}]"
 
         header_html = f"""
-                    {self._mine_link(index, f'<span style="font-size:{fs_head}px; color:{c_word}; padding-right: 8px;">{entry.character}</span>')}
+                    <span style="font-size:{fs_head}px; color:{c_word}; padding-right: 8px;">{entry.character}</span>
                     <span style="font-size:{fs_head - 2}px; color:{c_read};"> {readings_str}</span>{MARK_PLACEHOLDER}
         """
 
@@ -334,7 +330,7 @@ class Popup(QWidget):
             max_ratio = max(max_ratio, header_ratio)
 
             # --- HTML construction ---
-            header_html = self._mine_link(i, f'<span style="color: {config.color_highlight_word}; font-size:{config.font_size_header}px;">{entry.written_form}</span>')
+            header_html = f'<span style="color: {config.color_highlight_word}; font-size:{config.font_size_header}px;">{entry.written_form}</span>'
             if entry.reading: header_html += f' <span style="color: {config.color_highlight_reading}; font-size:{config.font_size_header - 2}px;">[{entry.reading}]</span>'
             if entry.deconjugation_process and config.show_deconjugation:
                 deconj_str = " ← ".join(p for p in entry.deconjugation_process if p)
@@ -533,7 +529,8 @@ class Popup(QWidget):
         # show every entry, scrollable, keeping the popup where it is
         horizontal_padding, vertical_padding = self._padding()
         self.display_label.setText(self._join_entries(len(self._entry_htmls)))
-        self._set_footer("Click a word to add it to Anki  ·  Esc / middle click to close"
+        self.display_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._set_footer("Click an entry to add it to Anki  ·  Esc / middle click to close"
                          if config.anki_enabled else "Esc / middle click to close")
         footer_height = self.footer_label.heightForWidth(self._content_width) + self.content_layout.spacing()
         full_height = self._entry_heights[-1] + footer_height + vertical_padding
@@ -562,6 +559,7 @@ class Popup(QWidget):
         self.locked = False
         logger.info("Popup unlocked.")
         self.footer_label.hide()
+        self.display_label.unsetCursor()
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.verticalScrollBar().setValue(0)
         # drop whatever was looked up while locked; the next mouse move starts fresh
@@ -584,14 +582,27 @@ class Popup(QWidget):
             f'{html.escape(text)}</span>')
         self.footer_label.show()
 
-    def _on_link_activated(self, link):
-        if not self.locked or not link.startswith('mine:'):
+    def eventFilter(self, obj, event):
+        if (obj is self.display_label and self.locked and event.type() == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.LeftButton):
+            # _entry_heights[i] is where entry i ends, in label coordinates (scrolling included)
+            y = event.position().y()
+            index = next((i for i, h in enumerate(self._entry_heights) if y <= h), len(self._entry_heights) - 1)
+            self._mine(index)
+            return True
+        return super().eventFilter(obj, event)
+
+    def _mine(self, index):
+        if not self.locked or not self._entries:
             return
+        logger.info(f"Mining: clicked entry {index + 1}")
         if not config.anki_enabled:
             self._set_footer("Anki mining is turned off in Settings")
             return
-        index = int(link.split(':', 1)[1])
-        if index >= len(self._entries) or self._mined.get(index) in ('pending', 'added'):
+        if index >= len(self._entries):
+            return
+        if self._mined.get(index) in ('pending', 'added'):
+            self._set_footer("Already added" if self._mined[index] == 'added' else "Adding to Anki…")
             return
         entry = self._entries[index]
         sentence = ankiconnect.extract_sentence(*self._context) if self._context else ''
