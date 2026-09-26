@@ -225,6 +225,12 @@ class SettingsDialog(QDialog):
         self.max_height_spin.setValue(config.popup_max_height_percent)
         behavior_layout.addRow("Max Popup Height:", self.max_height_spin)
 
+        self.requires_move_check = QCheckBox()
+        self.requires_move_check.setChecked(config.popup_requires_mouse_move)
+        self.requires_move_check.setToolTip("When the text under a resting mouse changes (e.g. the game advances), "
+                                            "don't open a popup until the mouse moves")
+        behavior_layout.addRow("Only Show After Mouse Moves:", self.requires_move_check)
+
         self.compact_check = QCheckBox()
         self.compact_check.setChecked(config.compact_mode)
         behavior_layout.addRow("Compact Mode:", self.compact_check)
@@ -636,6 +642,7 @@ class SettingsDialog(QDialog):
         if IS_WINDOWS:
             config.magpie_compatibility = self.magpie_check.isChecked()
         config.compact_mode = self.compact_check.isChecked()
+        config.popup_requires_mouse_move = self.requires_move_check.isChecked()
         config.show_all_glosses = self.show_glosses_check.isChecked()
         config.show_deconjugation = self.show_deconj_check.isChecked()
         config.show_pos = self.show_pos_check.isChecked()

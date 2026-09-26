@@ -70,12 +70,20 @@ class Lookup(threading.Thread):
         logger.debug("Lookup thread started.")
         while self.shared_state.running:
             try:
-                hit_result = self.shared_state.lookup_queue.get()
+                item = self.shared_state.lookup_queue.get()
                 if not self.shared_state.running: break
                 logger.debug("Lookup: Triggered")
+                hit_result, user_triggered = item if item else (None, True)
 
                 # skip lookup if hit_result didnt change
                 if hit_result == self.last_hit_result:
+                    continue
+
+                if hit_result and not user_triggered and config.popup_requires_mouse_move:
+                    # the text under a resting mouse changed (e.g. the game advanced to the next line):
+                    # close any popup and don't open one until the mouse moves
+                    self.last_hit_result = None
+                    self.popup_window.set_latest_data(None)
                     continue
                 self.last_hit_result = hit_result
 

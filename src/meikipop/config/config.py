@@ -66,6 +66,7 @@ class Config:
             'background_opacity': 211,
             'popup_position_mode': 'always_below',
             'popup_layout': 'jl',
+            'popup_requires_mouse_move': True,
             'color_deconjugation': '#4CAF50',
             'color_frequency': '#FFFF00',
             'color_dictionary': '#ADD8E6',

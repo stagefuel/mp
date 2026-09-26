@@ -3,6 +3,7 @@ import logging
 import threading
 from typing import List
 
+from meikipop.config.config import config
 from meikipop.gui.magpie_manager import magpie_manager
 from meikipop.ocr.interface import Paragraph
 
@@ -16,6 +17,7 @@ class HitScanner(threading.Thread):
         self.input_loop = input_loop
         self.screen_manager = screen_manager
         self.last_ocr_result = None
+        self._last_mouse_pos = None
 
     def run(self):
         logger.debug("HitScanner thread started.")
@@ -25,7 +27,13 @@ class HitScanner(threading.Thread):
                 if not self.shared_state.running: break
                 logger.debug("HitScanner: Triggered")
                 hit_scan_result = self.hit_scan(ocr_result)
-                self.shared_state.lookup_queue.put(hit_scan_result)
+                # a lookup is asked for by the user when the mouse moved (or the hotkey / a manual scan
+                # triggered it), as opposed to new ocr text appearing under a resting mouse
+                mouse_pos = self.input_loop.get_mouse_pos()
+                user_triggered = (mouse_pos != self._last_mouse_pos or not config.auto_scan_mode
+                                  or self.input_loop.keyboard_controller.is_hotkey_pressed())
+                self._last_mouse_pos = mouse_pos
+                self.shared_state.lookup_queue.put((hit_scan_result, user_triggered))
             except:
                 logger.exception("An unexpected error occurred in the hit scan loop. Continuing...")
         logger.debug("HitScanner thread stopped.")
