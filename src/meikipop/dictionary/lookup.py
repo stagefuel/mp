@@ -53,10 +53,13 @@ class Lookup(threading.Thread):
         self.dictionary = Dictionary()
         self.lookup_cache: OrderedDict = OrderedDict()
         self.CACHE_SIZE = 500
+        self._kanji_word_counts = None  # built on first use by fix_reversed_pairs
+        self._compound_word_counts = {}
 
         if not self.dictionary.load_dictionary(DICT_PATH):
             raise RuntimeError("Failed to load dictionary.")
         self.deconjugator = Deconjugator(self.dictionary.deconjugator_rules)
+        self._words_with_kanji('')  # build the index fix_reversed_pairs needs now rather than on the first hover
 
     def clear_cache(self):
         self.lookup_cache = OrderedDict()
@@ -76,6 +79,12 @@ class Lookup(threading.Thread):
 
                 if self.last_hit_result:
                     lookup_string, context_text, context_index = self.last_hit_result
+                    fixed_text = self.fix_reversed_pairs(context_text)
+                    if fixed_text != context_text:
+                        logger.info(f"OCR fix: reversed kanji pair in '{context_text}' -> '{fixed_text}'")
+                        # the character boxes are in the right place, only their labels were swapped,
+                        # so the same index now points at what is actually under the cursor
+                        context_text, lookup_string = fixed_text, fixed_text[context_index:]
                     lookup_result = self.lookup(lookup_string)
                     self.popup_window.set_latest_data(lookup_result, (context_text, context_index))
                 else:
@@ -84,10 +93,79 @@ class Lookup(threading.Thread):
                 logger.exception("An unexpected error occurred in the lookup loop. Continuing...")
         logger.debug("Lookup thread stopped.")
 
-    def lookup(self, lookup_string: str) -> List:
+    # a character counts as bound to a compound when at least this share of the words it appears in contain it
+    BOUND_SHARE = 0.25
+
+    def _words_with_kanji(self, char: str) -> int:
+        if self._kanji_word_counts is None:
+            counts = {}
+            for word in self.dictionary.lookup_map.keys():
+                for c in set(word):
+                    if KANJI_REGEX.match(c):
+                        counts[c] = counts.get(c, 0) + 1
+            self._kanji_word_counts = counts
+        return self._kanji_word_counts.get(char, 0)
+
+    def _is_bound_to(self, char: str, compound: str) -> bool:
+        """True if char mostly occurs in words containing compound (髑 in 髑髏, 傀 in 傀儡)."""
+        total = self._words_with_kanji(char)
+        if not total:
+            return False
+        with_compound = self._compound_word_counts.get(compound)
+        if with_compound is None:
+            with_compound = sum(1 for word in self.dictionary.lookup_map.keys() if compound in word)
+            self._compound_word_counts[compound] = with_compound
+        return with_compound / total >= self.BOUND_SHARE
+
+    def fix_reversed_pairs(self, text: str) -> str:
+        """Undo OCR reading a two-kanji word backwards (髑髏 -> 髏髑), which meikiocr's model does for
+        compounds whose characters almost only occur together. A pair is swapped when it isn't a word
+        but its reverse is, one of the two characters is bound to the reversed word (at least
+        BOUND_SHARE of the dictionary words containing it contain that word), and the pair isn't
+        part of a longer word or the seam between two words as read."""
+        if not text:
+            return text
+        words = self.dictionary.lookup_map
+        chars = list(text)
+        i = 0
+        while i < len(chars) - 1:
+            x, y = chars[i], chars[i + 1]
+            if (x != y and KANJI_REGEX.match(x) and KANJI_REGEX.match(y)
+                    and not words.get(x + y) and words.get(y + x)
+                    and not self._in_longer_word(chars, i)
+                    and not self._ends_word(chars, i) and not self._starts_word(chars, i + 1)
+                    and (self._is_bound_to(x, y + x) or self._is_bound_to(y, y + x))):
+                chars[i], chars[i + 1] = y, x
+                i += 2
+                continue
+            i += 1
+        return ''.join(chars)
+
+    def _ends_word(self, chars, i) -> bool:
+        """Whether chars[i] ends a 2-4 character word as read (明治|政府, 掃除|掃除)."""
+        words = self.dictionary.lookup_map
+        return any(words.get(''.join(chars[start:i + 1])) for start in range(max(0, i - 3), i))
+
+    def _starts_word(self, chars, i) -> bool:
+        """Whether a word of 2+ characters, conjugations included, starts at chars[i] (全然|自信, 金|貯める)."""
+        return any(isinstance(e, DictionaryEntry) and len(e.matched_text) >= 2
+                   for e in self.lookup(''.join(chars[i:i + 10]), quiet=True))
+
+    def _in_longer_word(self, chars, i) -> bool:
+        """Whether chars[i:i+2] is part of a 3-4 character word as read."""
+        words = self.dictionary.lookup_map
+        for start in range(i - 2, i + 1):
+            for n in (3, 4):
+                if start >= 0 and start + n <= len(chars) and start <= i and start + n >= i + 2:
+                    if words.get(''.join(chars[start:start + n])):
+                        return True
+        return False
+
+    def lookup(self, lookup_string: str, quiet: bool = False) -> List:
         if not lookup_string:
             return []
-        logger.info(f"Looking up: {lookup_string}")  # keep at info level so people know whats up
+        if not quiet:
+            logger.info(f"Looking up: {lookup_string}")  # keep at info level so people know whats up
 
         text = lookup_string.strip()
         text = text[:config.max_lookup_length]
