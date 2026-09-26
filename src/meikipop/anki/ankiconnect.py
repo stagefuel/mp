@@ -7,6 +7,7 @@ from typing import List, Optional
 import requests
 
 from meikipop.config.config import config
+from meikipop.dictionary import freqlist
 from meikipop.dictionary.lookup import DictionaryEntry, KanjiEntry
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ def field_values(entry, sentence: str) -> dict:
         'first_definition': _format_sense(senses[0], None) if senses else '',
         'sentence': escape(sentence),
         'pos': ', '.join(pos),
-        'frequency': str(entry.freq) if entry.freq < 999_999 else '',
+        'frequency': str(freqlist.rank(entry) or ''),
         'nothing': '',
     }
 

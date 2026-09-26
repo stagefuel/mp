@@ -32,6 +32,7 @@ class Config:
             'hotkey': 'shift',
             'scan_region': 'region',
             'max_lookup_length': 25,
+            'frequency_list_path': '',
             'glens_low_bandwidth': False,
             'ocr_provider': 'meikiocr (local)',
             'auto_scan_mode': True,
@@ -61,6 +62,10 @@ class Config:
             'color_highlight_reading': '#90EE90',
             'background_opacity': 245,
             'popup_position_mode': 'always_below',
+            'popup_layout': 'jl',
+            'color_deconjugation': '#4CAF50',
+            'color_frequency': '#FFFF00',
+            'color_dictionary': '#ADD8E6',
             'popup_max_width_percent': 40,
             'popup_max_height_percent': 40
         },

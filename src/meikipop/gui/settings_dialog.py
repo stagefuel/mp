@@ -4,7 +4,7 @@ from PyQt6.QtGui import QColor, QIcon, QFontDatabase
 from PyQt6.QtWidgets import (QWidget, QDialog, QFormLayout, QComboBox,
                              QSpinBox, QCheckBox, QPushButton, QColorDialog, QVBoxLayout, QHBoxLayout,
                              QGroupBox, QDialogButtonBox, QLabel, QSlider, QDoubleSpinBox,
-                             QTabWidget, QSizePolicy, QFontComboBox, QLineEdit)
+                             QTabWidget, QSizePolicy, QFontComboBox, QLineEdit, QFileDialog)
 
 from meikipop.anki import ankiconnect
 from meikipop.dictionary.lookup import Lookup
@@ -14,6 +14,12 @@ from meikipop.gui.popup import Popup
 from meikipop.ocr.ocr import OcrProcessor
 
 THEMES = {
+    "JL": {
+        "color_background": "#F6F6F6", "color_foreground": "#000000",
+        "color_highlight_word": "#03A9F4", "color_highlight_reading": "#000000",
+        "color_deconjugation": "#4CAF50", "color_frequency": "#FFFF00", "color_dictionary": "#ADD8E6",
+        "background_opacity": 230,
+    },
     "Nazeka": {
         "color_background": "#2E2E2E", "color_foreground": "#F0F0F0",
         "color_highlight_word": "#88D8FF", "color_highlight_reading": "#90EE90",
@@ -98,6 +104,19 @@ class SettingsDialog(QDialog):
         self.max_lookup_spin.setRange(5, 100)
         self.max_lookup_spin.setValue(config.max_lookup_length)
         core_layout.addRow("Max Lookup Length:", self.max_lookup_spin)
+
+        freq_container = QWidget()
+        freq_row = QHBoxLayout(freq_container)
+        freq_row.setContentsMargins(0, 0, 0, 0)
+        self.freq_path_edit = QLineEdit(config.frequency_list_path)
+        self.freq_path_edit.setPlaceholderText("meikipop's own (jiten.moe)")
+        self.freq_path_edit.setToolTip("A Nazeka-format frequency list, e.g. JL's Resources\\freqlist_vns.json, "
+                                       "to show the same frequency numbers as JL")
+        freq_browse = QPushButton("Browse…")
+        freq_browse.clicked.connect(self._browse_frequency_list)
+        freq_row.addWidget(self.freq_path_edit)
+        freq_row.addWidget(freq_browse)
+        core_layout.addRow("Frequency List:", freq_container)
 
         if IS_WINDOWS:
             self.magpie_check = QCheckBox()
@@ -262,6 +281,15 @@ class SettingsDialog(QDialog):
         self._set_expanding(self.theme_combo)
         theme_layout.addRow("Preset:", self.theme_combo)
 
+        self.layout_combo = QComboBox()
+        self.layout_map = {"JL": "jl", "meikipop": "classic"}
+        self.layout_combo.addItems(self.layout_map.keys())
+        self.layout_combo.setCurrentText(next((k for k, v in self.layout_map.items() if v == config.popup_layout), "JL"))
+        self.layout_combo.setToolTip("JL: word, reading, conjugation and frequency on one line, then one line per "
+                                     "meaning with all glosses (ignores the compact/gloss/part-of-speech toggles)")
+        self._set_expanding(self.layout_combo)
+        theme_layout.addRow("Layout:", self.layout_combo)
+
         self.opacity_slider_container = QWidget()
         opacity_layout = QHBoxLayout(self.opacity_slider_container)
         opacity_layout.setContentsMargins(0, 0, 0, 0)
@@ -318,7 +346,9 @@ class SettingsDialog(QDialog):
 
         self.color_widgets = {}
         color_settings_map = {"Background": "color_background", "Foreground": "color_foreground",
-                              "Highlight Word": "color_highlight_word", "Highlight Reading": "color_highlight_reading"}
+                              "Highlight Word": "color_highlight_word", "Highlight Reading": "color_highlight_reading",
+                              "Conjugation (JL layout)": "color_deconjugation", "Frequency (JL layout)": "color_frequency",
+                              "Dictionary Name (JL layout)": "color_dictionary"}
         for name, key in color_settings_map.items():
             btn = QPushButton(getattr(config, key))
             btn.clicked.connect(lambda _, k=key, b=btn: self.pick_color(k, b))
@@ -415,6 +445,12 @@ class SettingsDialog(QDialog):
         self._update_auto_scan_state(self.auto_scan_check.isChecked())
         self._update_glens_state(self.ocr_provider_combo.currentText())
         self._update_kanji_options_state(self.show_kanji_check.isChecked())
+
+    def _browse_frequency_list(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Frequency list (Nazeka format)", self.freq_path_edit.text(),
+                                              "JSON (*.json)")
+        if path:
+            self.freq_path_edit.setText(path)
 
     # --- Anki tab ---
     def _current_anki_field_map(self):
@@ -556,6 +592,7 @@ class SettingsDialog(QDialog):
         config.hotkey = self.hotkey_combo.currentText()
         config.glens_low_bandwidth = self.glens_compression_check.isChecked()
         config.max_lookup_length = self.max_lookup_spin.value()
+        config.frequency_list_path = self.freq_path_edit.text().strip()
         config.anki_enabled = self.anki_enabled_check.isChecked()
         config.anki_connect_url = self.anki_url_edit.text().strip()
         config.anki_deck = self.anki_deck_combo.currentText()
@@ -585,6 +622,7 @@ class SettingsDialog(QDialog):
         config.popup_max_width_percent = self.max_width_spin.value()
         config.popup_max_height_percent = self.max_height_spin.value()
         config.theme_name = self.theme_combo.currentText()
+        config.popup_layout = self.layout_map.get(self.layout_combo.currentText(), "jl")
         config.background_opacity = self.opacity_slider.value()
         config.font_family = self.font_family_combo.currentFont().family()
         config.font_size_header = self.font_size_header_spin.value()

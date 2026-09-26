@@ -31,6 +31,7 @@ class DictionaryEntry:
     freq: int
     deconjugation_process: tuple
     priority: float = 0.0
+    matched_text: str = ''  # the text as it appeared on screen, e.g. 撫でている for 撫でる
 
 
 @dataclass
@@ -238,6 +239,7 @@ class Lookup(threading.Thread):
                     'deconjugation_process': form.process,
                     'priority':              priority,
                     'match_len':             match_len,
+                    'matched_text':          original_lookup[:match_len],
                 }
             else:
                 # Same (written_form, reading) reached via a different deconjugation path
@@ -254,6 +256,7 @@ class Lookup(threading.Thread):
                     cur['freq'] = freq
                 if match_len > cur['match_len']:
                     cur['match_len'] = match_len
+                    cur['matched_text'] = original_lookup[:match_len]
 
         sorted_entries = sorted(
             merged.values(),
@@ -271,6 +274,7 @@ class Lookup(threading.Thread):
                 freq=d['freq'],
                 deconjugation_process=d['deconjugation_process'],
                 priority=d['priority'],
+                matched_text=d['matched_text'],
             ))
         return results
 

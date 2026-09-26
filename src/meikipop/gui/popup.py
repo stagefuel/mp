@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFrame, QApplication, 
 
 from meikipop.anki import ankiconnect
 from meikipop.config.config import config, IS_MACOS, IS_WINDOWS
+from meikipop.dictionary import freqlist
 from meikipop.dictionary.lookup import DictionaryEntry, KanjiEntry
 from meikipop.gui.magpie_manager import magpie_manager
 
@@ -256,6 +257,56 @@ class Popup(QWidget):
         mouse_pos = QCursor.pos()
         self.move_to(mouse_pos.x(), mouse_pos.y())
 
+    @staticmethod
+    def _display_len(text):
+        # rough width in 'x' units: japanese characters are about twice as wide
+        return sum(2 if ord(c) > 0x2E80 else 1 for c in text)
+
+    @staticmethod
+    def jl_deconjugation(entry: DictionaryEntry) -> str:
+        """'撫でていた ～teiru→past', like JL; empty if the word wasn't conjugated."""
+        steps = [p for p in reversed(entry.deconjugation_process or ()) if p and not p.startswith('(')]
+        if not steps:
+            return ''
+        return f"{entry.matched_text} ～{'→'.join(steps)}".strip()
+
+    def _render_jl_entry(self, entry: DictionaryEntry):
+        """JL's popup layout: word, reading, deconjugation and frequency on one line, the dictionary name,
+        then one line per sense with all glosses."""
+        fs_def = config.font_size_definitions
+        fs_small = max(8, round(fs_def * 0.9))
+        header_html = f'<span style="color:{config.color_highlight_word}; font-size:{config.font_size_header}px;">{entry.written_form}</span>'
+        header_calc = entry.written_form
+        if entry.reading:
+            header_html += f' <span style="color:{config.color_highlight_reading}; font-size:{round(config.font_size_header * 0.8)}px;">{entry.reading}</span>'
+            header_calc += ' ' + entry.reading
+        deconjugation = self.jl_deconjugation(entry)
+        if deconjugation:
+            header_html += f' <span style="color:{config.color_deconjugation}; font-size:{fs_small}px;">{html.escape(deconjugation)}</span>'
+        frequency = freqlist.rank(entry)
+        if frequency is not None:
+            header_html += f' <span style="color:{config.color_frequency}; font-size:{fs_small}px;">#{frequency}</span>'
+        header_html += MARK_PLACEHOLDER
+        ratio = self._display_len(header_calc) / self.header_chars_per_line \
+            + self._display_len(f" {deconjugation} #{frequency}") / self.def_chars_per_line
+
+        dict_html = f'<br><span style="color:{config.color_dictionary}; font-size:{max(8, round(fs_def * 0.7))}px;">JMdict</span>'
+
+        sense_lines = []
+        numbered = len(entry.senses) > 1
+        for idx, sense in enumerate(entry.senses):
+            parts = [f"({idx + 1})"] if numbered else []
+            if sense.get('pos'):
+                parts.append(f"({', '.join(sense['pos'])})")
+            if sense.get('tags'):
+                parts.append(f"({', '.join(sense['tags'])})")
+            parts.append('; '.join(sense.get('glosses', [])))
+            line = ' '.join(parts)
+            ratio = max(ratio, self._display_len(line) / self.def_chars_per_line)
+            sense_lines.append(html.escape(line))
+        definitions_html = f'<br><span style="color:{config.color_foreground}; font-size:{fs_def}px;">{"<br>".join(sense_lines)}</span>'
+        return f"{header_html}{dict_html}{definitions_html}", ratio
+
     def _render_kanji_entry(self, entry: KanjiEntry, index: int):
         # Colors and sizes from config
         c_word = config.color_highlight_word
@@ -330,6 +381,12 @@ class Popup(QWidget):
                 all_html_parts.append(self._render_kanji_entry(entry, i))
                 continue
 
+            if config.popup_layout == 'jl':
+                entry_html, entry_ratio = self._render_jl_entry(entry)
+                max_ratio = max(max_ratio, entry_ratio)
+                all_html_parts.append(entry_html)
+                continue
+
             header_text_calc = entry.written_form
             if entry.reading: header_text_calc += f" [{entry.reading}]"
             header_ratio = len(header_text_calc) / self.header_chars_per_line
@@ -342,8 +399,9 @@ class Popup(QWidget):
                 deconj_str = " ← ".join(p for p in entry.deconjugation_process if p)
                 if deconj_str:
                     header_html += f' <span style="color:{config.color_foreground}; font-size:{config.font_size_definitions - 2}px; opacity:0.8;">({deconj_str})</span>'
-            if config.show_frequency and entry.freq < 999_999:
-                header_html += f' <span style="color:{config.color_foreground}; font-size:{config.font_size_definitions - 2}px; opacity:0.6;">#{entry.freq}</span>'
+            frequency = freqlist.rank(entry)
+            if config.show_frequency and frequency is not None:
+                header_html += f' <span style="color:{config.color_foreground}; font-size:{config.font_size_definitions - 2}px; opacity:0.6;">#{frequency}</span>'
             header_html += MARK_PLACEHOLDER
             def_text_parts_calc = []
             def_text_parts_html = []
