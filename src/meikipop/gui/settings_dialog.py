@@ -14,6 +14,12 @@ from meikipop.gui.popup import Popup
 from meikipop.ocr.ocr import OcrProcessor
 
 THEMES = {
+    "Default": {
+        "color_background": "#f0f0f0", "color_foreground": "#2e2e2e",
+        "color_highlight_word": "#03a9f4", "color_highlight_reading": "#2e2e2e",
+        "color_deconjugation": "#4CAF50", "color_frequency": "#FFFF00", "color_dictionary": "#ADD8E6",
+        "background_opacity": 211,
+    },
     "JL": {
         "color_background": "#F6F6F6", "color_foreground": "#000000",
         "color_highlight_word": "#03A9F4", "color_highlight_reading": "#000000",
