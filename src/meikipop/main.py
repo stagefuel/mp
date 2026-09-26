@@ -16,6 +16,7 @@ from meikipop.gui.tray import TrayIcon
 from meikipop.ocr.hit_scan import HitScanner
 from meikipop.ocr.ocr import OcrProcessor
 from meikipop.screenshot.screenmanager import ScreenManager
+from meikipop.texthooker.feed import TextFeed
 from meikipop.utils.lastest_queue import LatestValueQueue
 
 
@@ -46,6 +47,9 @@ class SharedState:
         # set while the popup is locked in place for mining; pauses ocr and lookups
         self.popup_locked = False
 
+        # sends new ocr'd lines to texthooker pages over a local websocket (set up in run_gui)
+        self.text_feed = None
+
 
 def run_gui():
     setup_logging()
@@ -62,6 +66,7 @@ def run_gui():
 
     screen_manager = ScreenManager(shared_state, input_loop)  # trigger region selection
     lookup = Lookup(shared_state, popup_window)  # load dictionary
+    shared_state.text_feed = TextFeed(fix_text=lookup.fix_reversed_pairs)
 
     ocr_processor = OcrProcessor(shared_state, screen_manager)
     hit_scanner = HitScanner(shared_state, input_loop, screen_manager)
@@ -89,6 +94,7 @@ def run_gui():
     exit_code = app.exec()
 
     shared_state.running = False
+    shared_state.text_feed.stop()
     shared_state.screenshot_trigger_event.set()
     shared_state.ocr_queue.put(None)
     shared_state.hit_scan_queue.trigger()

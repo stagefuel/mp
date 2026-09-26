@@ -44,6 +44,8 @@ class OcrProcessor(threading.Thread):
                 # todo keep last ocr result?
 
                 self.shared_state.hit_scan_queue.put(ocr_result)
+                if self.shared_state.text_feed:
+                    self.shared_state.text_feed.process_scan(ocr_result)
             except:
                 logger.exception("An unexpected error occurred in the ocr loop. Continuing...")
             finally:

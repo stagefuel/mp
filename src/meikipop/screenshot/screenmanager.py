@@ -60,7 +60,10 @@ class ScreenManager(threading.Thread):
                     continue
 
                 # prevent ocr runs without mouse movements for auto-on-mouse-move mode
-                if config.auto_scan_mode and config.auto_scan_on_mouse_move and self.last_mouse_pos == self.input_loop.get_mouse_pos():
+                # (except for the texthooker feed, which has to notice text changing while the mouse rests)
+                feed = self.shared_state.text_feed
+                if (config.auto_scan_mode and config.auto_scan_on_mouse_move and not (feed and feed.active)
+                        and self.last_mouse_pos == self.input_loop.get_mouse_pos()):
                     continue
                 self.last_mouse_pos = self.input_loop.get_mouse_pos()
 
@@ -75,6 +78,8 @@ class ScreenManager(threading.Thread):
 
                 if self.last_screenshot and self.last_screenshot.raw == screenshot.raw:
                     logger.debug(f"Screen content didnt change... skipping ocr")
+                    if self.shared_state.text_feed:
+                        self.shared_state.text_feed.screen_unchanged()
                     self._sleep_and_handle_loop_exit(0.1)
                     continue
 

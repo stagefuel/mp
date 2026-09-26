@@ -165,6 +165,26 @@ class SettingsDialog(QDialog):
         auto_group.setLayout(auto_layout)
         self.tab_general_layout.addWidget(auto_group)
 
+        # --- Texthooker feed ---
+        texthooker_group = QGroupBox("Texthooker (WebSocket)")
+        texthooker_layout = QFormLayout()
+        self.form_layouts.append(texthooker_layout)
+
+        self.texthooker_check = QCheckBox()
+        self.texthooker_check.setChecked(config.texthooker_enabled)
+        self.texthooker_check.setToolTip("Send each new line of OCR'd text to texthooker pages (e.g. kizuna-texthooker-ui) "
+                                         "connected to ws://localhost:<port>. Needs Auto Scan; scan just the text box "
+                                         "so menus and other windows aren't sent.")
+        texthooker_layout.addRow("Send New Lines:", self.texthooker_check)
+
+        self.texthooker_port_spin = QSpinBox()
+        self.texthooker_port_spin.setRange(1024, 65535)
+        self.texthooker_port_spin.setValue(config.texthooker_port)
+        texthooker_layout.addRow("Port:", self.texthooker_port_spin)
+
+        texthooker_group.setLayout(texthooker_layout)
+        self.tab_general_layout.addWidget(texthooker_group)
+
         # --- Group 3: Popup Behavior ---
         behavior_group = QGroupBox("Popup Behavior")
         behavior_layout = QFormLayout()
@@ -592,6 +612,8 @@ class SettingsDialog(QDialog):
         config.hotkey = self.hotkey_combo.currentText()
         config.glens_low_bandwidth = self.glens_compression_check.isChecked()
         config.max_lookup_length = self.max_lookup_spin.value()
+        config.texthooker_enabled = self.texthooker_check.isChecked()
+        config.texthooker_port = self.texthooker_port_spin.value()
         config.frequency_list_path = self.freq_path_edit.text().strip()
         config.anki_enabled = self.anki_enabled_check.isChecked()
         config.anki_connect_url = self.anki_url_edit.text().strip()
@@ -633,6 +655,8 @@ class SettingsDialog(QDialog):
         self.input_loop.reapply_settings()
         self.popup_window.reapply_settings()
         self.tray_icon.reapply_settings()
+        if self.ocr_processor.shared_state.text_feed:
+            self.ocr_processor.shared_state.text_feed.reapply_settings()
         self.ocr_processor.shared_state.screenshot_trigger_event.set()
 
         self.accept()

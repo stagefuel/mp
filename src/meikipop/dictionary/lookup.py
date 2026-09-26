@@ -54,6 +54,8 @@ class Lookup(threading.Thread):
         self.lookup_cache: OrderedDict = OrderedDict()
         self.CACHE_SIZE = 500
         self._kanji_word_counts = None  # built on first use by fix_reversed_pairs
+        # fix_reversed_pairs is also used by the texthooker feed on the ocr thread
+        self._lock = threading.RLock()
         self._compound_word_counts = {}
 
         if not self.dictionary.load_dictionary(DICT_PATH):
@@ -125,6 +127,10 @@ class Lookup(threading.Thread):
         part of a longer word or the seam between two words as read."""
         if not text:
             return text
+        with self._lock:
+            return self._fix_reversed_pairs(text)
+
+    def _fix_reversed_pairs(self, text: str) -> str:
         words = self.dictionary.lookup_map
         chars = list(text)
         i = 0
@@ -176,9 +182,10 @@ class Lookup(threading.Thread):
         if not text:
             return []
 
-        if text in self.lookup_cache:
-            self.lookup_cache.move_to_end(text)
-            return self.lookup_cache[text]
+        with self._lock:
+            if text in self.lookup_cache:
+                self.lookup_cache.move_to_end(text)
+                return self.lookup_cache[text]
 
         results = self._do_lookup(text)
 
@@ -194,9 +201,10 @@ class Lookup(threading.Thread):
                     examples=kd.get('examples', []),
                 ))
 
-        self.lookup_cache[text] = results
-        if len(self.lookup_cache) > self.CACHE_SIZE:
-            self.lookup_cache.popitem(last=False)
+        with self._lock:
+            self.lookup_cache[text] = results
+            if len(self.lookup_cache) > self.CACHE_SIZE:
+                self.lookup_cache.popitem(last=False)
         return results
 
     def _do_lookup(self, text: str) -> List[DictionaryEntry]:

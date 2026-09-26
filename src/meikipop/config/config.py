@@ -40,6 +40,9 @@ class Config:
             'auto_scan_interval_seconds': 0.5,
             'auto_scan_on_mouse_move': True,
             'magpie_compatibility': True,
+            'texthooker_enabled': False,
+            'texthooker_port': 9001,
+            'texthooker_stable_scans': 2,
             'validated_dict_ts': -1
         },
         'Theme': {
