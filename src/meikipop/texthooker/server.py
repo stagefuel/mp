@@ -21,8 +21,11 @@ class TexthookerServer:
     def start(self, port: int):
         self.stop()
         try:
-            # loopback only: nothing on the network can read the feed
-            self._server = serve(self._handle_client, '127.0.0.1', port)
+            # loopback only: nothing on the network can read the feed.
+            # no keepalive pings: browsers freeze/throttle background tabs (the page sits behind the game), so
+            # pongs arrive late and the default 20s ping timeout would drop the page every few minutes.
+            # textractor/lunahost don't ping either; a dead connection is noticed when the next line is sent.
+            self._server = serve(self._handle_client, '127.0.0.1', port, ping_interval=None)
         except OSError as e:
             logger.error(f"Texthooker: could not listen on ws://localhost:{port} ({e}). "
                          f"Is Textractor/LunaHost or another meikipop already using that port?")
@@ -48,7 +51,8 @@ class TexthookerServer:
     def _handle_client(self, websocket):
         with self._lock:
             self._clients.add(websocket)
-        logger.info(f"Texthooker: client connected ({len(self._clients)} total).")
+        origin = websocket.request.headers.get('Origin', 'no origin') if websocket.request else 'unknown'
+        logger.info(f"Texthooker: client connected from {origin} ({len(self._clients)} total).")
         try:
             for _ in websocket:  # nothing is expected from the page; just keep the connection open
                 pass
@@ -57,7 +61,8 @@ class TexthookerServer:
         finally:
             with self._lock:
                 self._clients.discard(websocket)
-            logger.info("Texthooker: client disconnected.")
+            reason = f"code {websocket.close_code}" + (f", {websocket.close_reason}" if websocket.close_reason else "")
+            logger.info(f"Texthooker: client disconnected ({reason}).")
 
     def broadcast(self, text: str):
         with self._lock:
