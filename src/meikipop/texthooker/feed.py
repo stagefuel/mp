@@ -43,6 +43,16 @@ class TextFeed:
         self._last_lines: List[str] = []
         self._last_restart_check = 0.0
         self.reapply_settings()
+        # the watchdog runs on its own timer so it also covers pauses and screens with nothing to scan
+        self._watchdog_stop = threading.Event()
+        threading.Thread(target=self._watchdog, daemon=True, name="TexthookerWatchdog").start()
+
+    def _watchdog(self):
+        while not self._watchdog_stop.wait(RESTART_CHECK_SECONDS):
+            try:
+                self._keep_server_alive()
+            except Exception:
+                logger.exception("Texthooker: watchdog error")
 
     def reapply_settings(self):
         if config.texthooker_enabled:
@@ -56,7 +66,7 @@ class TextFeed:
         return config.texthooker_enabled and self.server.running
 
     def _keep_server_alive(self):
-        # watchdog: if the server thread ever dies, start it again (checked at most every 30s, from the ocr thread)
+        # if the server thread ever dies, start it again (at most every 30s)
         now = time.monotonic()
         if (config.texthooker_enabled and not self.server.running
                 and now - self._last_restart_check >= RESTART_CHECK_SECONDS):
@@ -65,7 +75,6 @@ class TextFeed:
             self.server.start(config.texthooker_port)
 
     def process_scan(self, paragraphs: Optional[List[Paragraph]]):
-        self._keep_server_alive()
         if not self.active:
             return
         lines = []
@@ -131,4 +140,5 @@ class TextFeed:
         self.server.broadcast(text)
 
     def stop(self):
+        self._watchdog_stop.set()
         self.server.stop()
