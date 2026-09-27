@@ -2,12 +2,19 @@
 import asyncio
 import logging
 import threading
+import time
+from collections import deque
 from typing import Optional
 
 from websockets.asyncio.server import broadcast, serve
 from websockets.exceptions import ConnectionClosed
 
 logger = logging.getLogger(__name__)
+
+# lines sent while no page is connected (e.g. while it reconnects) are kept and delivered on the next connect
+UNDELIVERED_MAX_LINES = 200
+UNDELIVERED_MAX_AGE_SECONDS = 30 * 60
+LOGGED_INCOMING_PER_CLIENT = 5
 
 
 class TexthookerServer:
@@ -23,6 +30,7 @@ class TexthookerServer:
         self._stop_event: Optional[asyncio.Event] = None
         self._ws_server = None
         self._clients = set()
+        self._undelivered = deque(maxlen=UNDELIVERED_MAX_LINES)  # (time, line); only touched on the loop thread
         self.port = None
 
     def start(self, port: int) -> bool:
@@ -116,8 +124,20 @@ class TexthookerServer:
         origin = websocket.request.headers.get('Origin', 'no origin') if websocket.request else 'unknown'
         logger.info(f"Texthooker: client connected from {origin} ({len(self._clients)} total).")
         try:
-            async for _ in websocket:  # nothing is expected from the page; just keep the connection open
-                pass
+            # catch the page up on lines it missed while nothing was connected
+            cutoff = time.monotonic() - UNDELIVERED_MAX_AGE_SECONDS
+            missed = [line for sent_at, line in self._undelivered if sent_at >= cutoff]
+            self._undelivered.clear()
+            for line in missed:
+                await websocket.send(line)
+            if missed:
+                logger.info(f"Texthooker: delivered {len(missed)} line(s) sent while no page was connected.")
+
+            received = 0
+            async for message in websocket:  # nothing is expected from the page; log a few in case it talks
+                received += 1
+                if received <= LOGGED_INCOMING_PER_CLIENT:
+                    logger.info(f"Texthooker: page sent: {str(message)[:200]!r}")
         except ConnectionClosed:
             pass
         finally:
@@ -125,13 +145,19 @@ class TexthookerServer:
             reason = f"code {websocket.close_code}" + (f", {websocket.close_reason}" if websocket.close_reason else "")
             logger.info(f"Texthooker: client disconnected ({reason}).")
 
+    def _broadcast_now(self, text: str):
+        if self._clients:
+            # websockets' broadcast writes without waiting; a client that can't keep up is skipped, not waited on
+            broadcast(set(self._clients), text)
+        else:
+            self._undelivered.append((time.monotonic(), text))
+
     def broadcast(self, text: str):
         """Queue text for every connected page and return immediately (called from the ocr thread)."""
         loop = self._loop
         if loop is None or not self.running:
             return
         try:
-            # websockets' broadcast writes without waiting; a client that can't keep up is skipped, not waited on
-            loop.call_soon_threadsafe(lambda: broadcast(set(self._clients), text))
+            loop.call_soon_threadsafe(self._broadcast_now, text)
         except RuntimeError:  # loop closed between the check and the call
             pass
