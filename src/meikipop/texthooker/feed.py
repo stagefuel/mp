@@ -2,6 +2,7 @@
 import logging
 import re
 import threading
+import time
 from collections import deque
 from difflib import SequenceMatcher
 from typing import Callable, List, Optional
@@ -17,6 +18,7 @@ WHITESPACE_REGEX = re.compile(r'\s+')
 
 GONE_AFTER_SCANS = 2  # a sent line must be missing this many scans in a row before its text counts as new again
 SIMILAR_RATIO = 0.8  # ocr of the same line varies a little between scans (one char off in 6 is 0.83)
+RESTART_CHECK_SECONDS = 30
 RECENT_LINES = 3  # guards against a line flickering out of the ocr for a few scans and coming back
 
 
@@ -39,6 +41,7 @@ class TextFeed:
         self._visible = {}  # sent line still on screen -> scans in a row it has been missing
         self._recent = deque(maxlen=RECENT_LINES)
         self._last_lines: List[str] = []
+        self._last_restart_check = 0.0
         self.reapply_settings()
 
     def reapply_settings(self):
@@ -52,7 +55,17 @@ class TextFeed:
     def active(self):
         return config.texthooker_enabled and self.server.running
 
+    def _keep_server_alive(self):
+        # watchdog: if the server thread ever dies, start it again (checked at most every 30s, from the ocr thread)
+        now = time.monotonic()
+        if (config.texthooker_enabled and not self.server.running
+                and now - self._last_restart_check >= RESTART_CHECK_SECONDS):
+            self._last_restart_check = now
+            logger.warning("Texthooker: server isn't running, restarting it.")
+            self.server.start(config.texthooker_port)
+
     def process_scan(self, paragraphs: Optional[List[Paragraph]]):
+        self._keep_server_alive()
         if not self.active:
             return
         lines = []

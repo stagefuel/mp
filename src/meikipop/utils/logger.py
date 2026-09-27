@@ -2,6 +2,7 @@
 import logging
 import os
 import sys
+import threading
 
 from meikipop.config.config import APP_NAME
 from meikipop.utils.paths import paths
@@ -40,3 +41,10 @@ def setup_logging():
         logger.addHandler(file_handler)
     except OSError:
         pass
+
+    # errors in background threads would otherwise only reach the console window, not the log file
+    def log_thread_exception(args):
+        if args.exc_type is not SystemExit:
+            logger.error(f"Uncaught exception in thread {args.thread.name if args.thread else '?'}",
+                         exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+    threading.excepthook = log_thread_exception
