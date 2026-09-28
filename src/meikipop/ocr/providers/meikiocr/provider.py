@@ -11,6 +11,7 @@ from meikiocr import ocr as meikiocr_module
 
 # Import the "contract" classes from your application's interface
 from meikipop.ocr.interface import BoundingBox, OcrProvider, Paragraph, Word
+from meikipop.ocr.providers.meikiocr import vertical
 from meikipop.ocr.providers.postprocessing import group_lines_into_paragraphs
 
 logger = logging.getLogger(__name__)
@@ -28,11 +29,6 @@ EXTRA_SWAPPED_PAIRS = {
     "髏髑": "髑髏",
 }
 meikiocr_module.SWAPPED_PAIRS.update(EXTRA_SWAPPED_PAIRS)
-
-# vertical text: the detector sometimes returns two overlapping boxes for one column, each read a bit
-# differently (padding the boxes to catch cut-off first characters was tried and made accuracy worse)
-SAME_COLUMN_X_OVERLAP = 0.5  # boxes this much side by side (of the narrower one) that also overlap vertically
-CHAR_OVERLAP = 0.3  # chars overlapping more than this (of the shorter one) are the same char read twice
 
 
 class MeikiOcrProvider(OcrProvider):
@@ -72,13 +68,17 @@ class MeikiOcrProvider(OcrProvider):
                 logger.error("invalid image dimensions received.")
                 return None
 
-            # --- 1. Run the entire OCR pipeline with a single library call ---
-            ocr_results = self.ocr_client.run_ocr(
-                image_np_rgb,
-                det_threshold=DET_CONFIDENCE_THRESHOLD,
-                rec_threshold=REC_CONFIDENCE_THRESHOLD,
-                punct_conf_factor=0.2
-            )
+            # --- 1. Run the OCR pipeline (vertical columns via the horizontal model, see vertical.py) ---
+            try:
+                ocr_results = self._run_ocr(image_np_rgb)
+            except Exception:
+                logger.exception("reading vertical text via the horizontal model failed; using meikiocr's own pipeline")
+                ocr_results = self.ocr_client.run_ocr(
+                    image_np_rgb,
+                    det_threshold=DET_CONFIDENCE_THRESHOLD,
+                    rec_threshold=REC_CONFIDENCE_THRESHOLD,
+                    punct_conf_factor=0.2
+                )
 
             # --- 2. Transform the library's output to MeikiPop's format ---
             return self._to_meikipop_paragraphs(ocr_results, img_width, img_height)
@@ -87,45 +87,22 @@ class MeikiOcrProvider(OcrProvider):
             logger.error(f"an error occurred in {self.NAME}: {e}", exc_info=True)
             return None  # returning none indicates a failure.
 
-    @staticmethod
-    def _chars_box(chars):
-        return (min(c['bbox'][0] for c in chars), min(c['bbox'][1] for c in chars),
-                max(c['bbox'][2] for c in chars), max(c['bbox'][3] for c in chars))
-
-    @staticmethod
-    def _overlap(a1, a2, b1, b2):
-        return max(0, min(a2, b2) - max(a1, b1)) / max(1e-6, min(a2 - a1, b2 - b1))
-
-    def _merge_overlapping_columns(self, ocr_results: list) -> list:
-        """Combine vertical lines that are two reads of the same column into one, keeping the more
-        confident read of each character."""
-        columns = [r for r in ocr_results if r.get('is_vertical') and r.get('chars')]
-        others = [r for r in ocr_results if not (r.get('is_vertical') and r.get('chars'))]
-
-        groups = []  # each: list of lines, merged transitively
-        for line in columns:
-            box = self._chars_box(line['chars'])
-            touching = [g for g in groups if any(
-                self._overlap(box[0], box[2], b[0], b[2]) >= SAME_COLUMN_X_OVERLAP
-                and self._overlap(box[1], box[3], b[1], b[3]) > 0
-                for b in (self._chars_box(other['chars']) for other in g))]
-            merged_group = [line] + [l for g in touching for l in g]
-            groups = [g for g in groups if g not in touching] + [merged_group]
-
-        merged = []
-        for group in groups:
-            if len(group) == 1:
-                merged.append(group[0])
-                continue
-            accepted = []
-            for char in sorted((c for line in group for c in line['chars']), key=lambda c: c.get('conf', 0),
-                               reverse=True):
-                y1, y2 = char['bbox'][1], char['bbox'][3]
-                if all(self._overlap(y1, y2, a['bbox'][1], a['bbox'][3]) <= CHAR_OVERLAP for a in accepted):
-                    accepted.append(char)
-            accepted.sort(key=lambda c: c['bbox'][1])
-            merged.append({'text': ''.join(c['char'] for c in accepted), 'chars': accepted, 'is_vertical': True})
-        return others + merged
+    def _run_ocr(self, image_np_rgb) -> list:
+        """Horizontal lines through meikiocr's normal pipeline, vertical columns rebuilt as horizontal lines and
+        read by the (much more accurate) horizontal model."""
+        horizontal_boxes, vertical_boxes = vertical.detect(self.ocr_client, image_np_rgb)
+        results = []
+        if horizontal_boxes:
+            # hand run_ocr the boxes already found instead of detecting again
+            self.ocr_client.run_detection = lambda image, conf_threshold=0.5: [{'bbox': list(b)} for b in horizontal_boxes]
+            try:
+                results = self.ocr_client.run_ocr(image_np_rgb, det_threshold=DET_CONFIDENCE_THRESHOLD,
+                                                  rec_threshold=REC_CONFIDENCE_THRESHOLD, punct_conf_factor=0.2)
+            finally:
+                del self.ocr_client.run_detection  # back to the class method
+        for box in vertical_boxes:
+            results.append(vertical.read_column(self.ocr_client, image_np_rgb, box, REC_CONFIDENCE_THRESHOLD))
+        return results
 
     def _to_normalized_bbox(self, bbox_pixels: list, img_width: int, img_height: int) -> BoundingBox:
         """converts an [x1, y1, x2, y2] pixel bbox to a normalized meikipop BoundingBox."""
@@ -142,7 +119,7 @@ class MeikiOcrProvider(OcrProvider):
     def _to_meikipop_paragraphs(self, ocr_results: list, img_width: int, img_height: int) -> List[Paragraph]:
         """converts the final meikiocr result list into meikipop's Paragraph format."""
         lines: List[Paragraph] = []
-        for line_result in self._merge_overlapping_columns(ocr_results):
+        for line_result in ocr_results:
             full_text = line_result.get("text", "").strip()
             chars = line_result.get("chars", [])
             if not full_text or not chars or not JAPANESE_REGEX.search(full_text):
