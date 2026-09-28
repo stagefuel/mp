@@ -64,6 +64,8 @@ meikipop  # run the application
 
 to build the windows exe yourself: `pip install pyinstaller`, then `pyinstaller --noconfirm meikipop.win.x64.spec` (the exe ends up in `dist\`).
 
+releases: publishing a github release runs `.github/workflows/windows-release.yml`, which builds the exe on a windows runner and attaches it to the release together with the matching source zip.
+
 ### setting up this fork's extras
 
 * **anki mining:** install the [AnkiConnect](https://ankiweb.net/shared/info/2055492159) add-on (code `2055492159`) and keep anki running. out of the box, cards go to the `Default` deck as `Basic` notes; pick your own deck, note type and what goes in each field in *settings → anki* (*load decks & note types from anki* fills the lists). to mine: hover a word, **middle click** to lock the popup, **click an entry**; the bottom line turns green when it's added and red if it's already in anki. esc, middle click or clicking elsewhere closes it.
