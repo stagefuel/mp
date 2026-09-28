@@ -35,12 +35,14 @@ jobs:
       - name: build with pyinstaller
         run: pyinstaller --noconfirm meikipop.win.x64.spec
 
-      - name: smoke test (the bundled exe starts and parses its arguments)
+      - name: smoke test (the bundled exe starts and every OCR provider can be imported)
         shell: pwsh
         run: |
           $out = & dist\meikipop.exe --help 2>&1 | Out-String
           Write-Output $out
           if ($LASTEXITCODE -ne 0 -or $out -notmatch 'usage: meikipop') { throw "meikipop.exe --help failed" }
+          & dist\meikipop.exe self-test
+          if ($LASTEXITCODE -ne 0) { throw "meikipop.exe self-test failed (a module missing from the spec?)" }
 
       - name: package
         shell: pwsh

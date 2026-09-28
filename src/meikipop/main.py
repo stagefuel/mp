@@ -110,6 +110,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     subparsers.add_parser("build-dict", help="Build the dictionary from source files")
+    subparsers.add_parser("self-test", help="Check that every bundled OCR provider can be imported, then exit")
 
     import_html_parser = subparsers.add_parser("import-yomitan-dict-html", help="Import Yomitan dictionary (HTML format)")
     import_html_parser.add_argument("dictionary_files", nargs='+', help="Path(s) to the dictionary zip file(s)")
@@ -119,7 +120,20 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "build-dict":
+    if args.command == "self-test":
+        import importlib
+        failed = False
+        for module in ("meikipop.ocr.providers.meikiocr.provider", "meikipop.ocr.providers.meikiocr.vertical",
+                       "meikipop.ocr.providers.glensv2", "meikipop.ocr.providers.owocr",
+                       "meikipop.ocr.providers.screenai", "meikipop.texthooker.feed", "meikipop.anki.ankiconnect"):
+            try:
+                importlib.import_module(module)
+                print(f"ok      {module}")
+            except Exception as e:
+                failed = True
+                print(f"FAILED  {module}: {e!r}")
+        sys.exit(1 if failed else 0)
+    elif args.command == "build-dict":
         from meikipop.scripts.build_dictionary import main as build_main
         build_main()
     elif args.command == "import-yomitan-dict-html":
