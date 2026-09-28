@@ -78,8 +78,7 @@ class TextFeed:
         if not self.active:
             return
         lines = []
-        for paragraph in sorted(paragraphs or [], key=lambda p: (round(p.box.center_y - p.box.height / 2, 2),
-                                                                  p.box.center_x)):
+        for paragraph in self._reading_order(paragraphs or []):
             line = WHITESPACE_REGEX.sub('', paragraph.full_text)
             if len(line) < 2 or not JAPANESE_REGEX.search(line):
                 continue
@@ -90,6 +89,16 @@ class TextFeed:
         with self._lock:
             self._last_lines = lines
             self._update(lines)
+
+    @staticmethod
+    def _reading_order(paragraphs: List[Paragraph]) -> List[Paragraph]:
+        """Text boxes in reading order: top to bottom for horizontal text, right to left for vertical text
+        (decided by the majority, so a stray horizontal name tag doesn't flip a vertical page)."""
+        vertical = sum(p.is_vertical for p in paragraphs) > len(paragraphs) / 2
+        if vertical:
+            return sorted(paragraphs, key=lambda p: (-round(p.box.center_x, 2),
+                                                     p.box.center_y - p.box.height / 2))
+        return sorted(paragraphs, key=lambda p: (round(p.box.center_y - p.box.height / 2, 2), p.box.center_x))
 
     def screen_unchanged(self):
         """The screen didn't change since the last scan, which the screenshot loop skips ocr for;
