@@ -14,7 +14,7 @@ from meikipop.config.config import config, IS_LINUX, IS_MACOS, IS_WINDOWS
 if IS_LINUX:
     from Xlib import display as xlib_display
     from Xlib.error import XError
-    from Xlib import XK
+    from Xlib import X, XK
 elif IS_MACOS:
     import Quartz
     from AppKit import NSEvent
@@ -142,6 +142,57 @@ class MacOSKeyboardController:
             logger.warning(f"Error checking hotkey state: {e}")
             return False
 
+class X11InputGrabber(threading.Thread):
+    """Linux/X11 (incl. XWayland): while the popup is up, grab the middle button - and Esc while it's locked -
+    on the root window, so the X11 app under the cursor (e.g. a Wine game; many VNs hide their text box on middle
+    click) doesn't act on them too. meikipop still sees them through pynput's record extension. Wayland-native
+    apps can't be affected: X can't grab their input."""
+
+    MIDDLE_BUTTON = 2
+
+    def __init__(self):
+        super().__init__(daemon=True, name="X11InputGrabber")
+        self.want_button = False
+        self.want_escape = False
+        self._has_button = False
+        self._has_escape = False
+        self.display = xlib_display.Display()
+        self.root = self.display.screen().root
+        self.escape_keycode = self.display.keysym_to_keycode(XK.string_to_keysym('Escape'))
+
+    def run(self):
+        while True:
+            try:
+                self._apply()
+                while self.display.pending_events():
+                    self.display.next_event()  # grabbed presses are delivered to us; nothing to do with them
+            except Exception:
+                logger.exception("X11 input grab failed")
+                time.sleep(1)
+            time.sleep(0.01)
+
+    def _apply(self):
+        changed = False
+        if self.want_button != self._has_button:
+            if self.want_button:
+                self.root.grab_button(self.MIDDLE_BUTTON, X.AnyModifier, False,
+                                      X.ButtonPressMask | X.ButtonReleaseMask,
+                                      X.GrabModeAsync, X.GrabModeAsync, X.NONE, X.NONE)
+            else:
+                self.root.ungrab_button(self.MIDDLE_BUTTON, X.AnyModifier)
+            self._has_button = self.want_button
+            changed = True
+        if self.want_escape != self._has_escape and self.escape_keycode:
+            if self.want_escape:
+                self.root.grab_key(self.escape_keycode, X.AnyModifier, False, X.GrabModeAsync, X.GrabModeAsync)
+            else:
+                self.root.ungrab_key(self.escape_keycode, X.AnyModifier)
+            self._has_escape = self.want_escape
+            changed = True
+        if changed:
+            self.display.sync()  # surfaces a BadAccess (another client holds the grab) as an exception here
+
+
 class InputLoop(threading.Thread):
     def __init__(self, shared_state):
         super().__init__(daemon=True, name="InputLoop")
@@ -161,6 +212,13 @@ class InputLoop(threading.Thread):
         self.popup = None
         self._suppressing_middle = False
         self._suppressing_escape = False
+
+        self.x11_grabber = None
+        if IS_LINUX:
+            try:
+                self.x11_grabber = X11InputGrabber()
+            except Exception as e:
+                logger.warning(f"Middle click/Esc won't be kept from the app under the popup: {e}")
 
     def attach_popup(self, popup):
         self.popup = popup
@@ -240,7 +298,13 @@ class InputLoop(threading.Thread):
         hotkey_was_pressed = False
         self._start_listeners()
 
+        if self.x11_grabber:
+            self.x11_grabber.start()
+
         while self.shared_state.running:
+            if self.x11_grabber:
+                self.x11_grabber.want_button = config.is_enabled and self._popup_accepts_lock_toggle()
+                self.x11_grabber.want_escape = config.is_enabled and self.shared_state.popup_locked
             if not config.is_enabled:
                 time.sleep(0.1)
                 continue

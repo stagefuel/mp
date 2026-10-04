@@ -108,11 +108,11 @@ class ScreenCastManager:
             sample = appsink.emit('pull-sample')
             if sample is None:
                 raise ValueError
-            frame_data = self._process_sample(sample)
-            if frame_data[0] is None:
-                raise ValueError
+            # just keep a reference; the pixels are copied out only when a screenshot is requested, rather
+            # than copying every full-screen frame of the stream in the background
             with self.frame_lock:
-                self.last_frame = frame_data
+                self.last_sample = sample
+                self.last_frame = None
             self.ready_event.set()
         except:  # todo should we "except Exception as e" and add logs?
             self.stop()
@@ -263,6 +263,10 @@ class ScreenCastManager:
     def request_frame(self):
         if self.ready_event.is_set():
             with self.frame_lock:
+                if self.last_frame is None and self.last_sample is not None:
+                    frame = self._process_sample(self.last_sample)
+                    if frame[0] is not None:
+                        self.last_frame = frame  # reused until a newer frame arrives
                 if self.last_frame:
                     return self.last_frame
         return (None, 0, 0)
@@ -272,6 +276,7 @@ class ScreenCastManager:
         self.loop = None
         self.session = None
         self.last_frame = None
+        self.last_sample = None
         self.selected_event.clear()
 
         self.init_thread = threading.Thread(target=self._initialize_screencast, daemon=True)

@@ -21,6 +21,9 @@ IS_WAYLAND = IS_LINUX and os.environ.get('XDG_SESSION_TYPE', '').lower() == 'way
 if IS_WAYLAND:
     os.environ['QT_QPA_PLATFORM'] = 'xcb'
 
+# default popup font: one that ships with each OS and has Japanese glyphs
+DEFAULT_FONT = 'Segoe UI' if IS_WINDOWS else 'Hiragino Sans' if IS_MACOS else 'Noto Sans CJK JP'
+
 CONFIG_PATH = paths.config_path
 DICT_PATH = paths.dictionary_path
 
@@ -47,7 +50,7 @@ class Config:
         },
         'Theme': {
             'theme_name': 'Default',
-            'font_family': 'Segoe UI',
+            'font_family': DEFAULT_FONT,
             'font_size_definitions': 26,
             'font_size_header': 32,
             'compact_mode': True,

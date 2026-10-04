@@ -1,7 +1,8 @@
 # .github/workflows/windows-release.yml
-# builds the windows exe for this fork and attaches it (plus the matching source) to the release that triggered it.
+# builds the windows exe (and a linux x11 binary) for this fork and attaches them, plus the matching source, to the
+# release that triggered it.
 # publishing a release is the only trigger, so nothing runs on pushes or on a schedule.
-name: windows release build
+name: release build
 
 on:
   release:
@@ -56,3 +57,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload $env:TAG "dist\meikipop-$env:TAG-windows-x64.exe" "dist\meikipop-$env:TAG-source.zip" --clobber
+
+  build-linux:
+    # single-file x86_64 binary for X11 sessions (on Wayland, run from source / Flatpak - see LINUX.md)
+    runs-on: ubuntu-22.04  # older glibc, so the binary runs on current distros too
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: system libraries (qt xcb platform, virtual display for the self-test)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 \
+            libxcb-shape0 libxcb-xinerama0 libegl1
+
+      - name: install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: build with pyinstaller
+        run: pyinstaller --noconfirm meikipop.linux.x64.spec
+
+      - name: smoke test (starts, every OCR provider can be imported)
+        run: |
+          xvfb-run -a dist/meikipop --help | grep -q "usage: meikipop"
+          xvfb-run -a dist/meikipop self-test
+
+      - name: attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mv dist/meikipop "dist/meikipop-$TAG-linux-x64"
+          sha256sum "dist/meikipop-$TAG-linux-x64"
+          gh release upload "$TAG" "dist/meikipop-$TAG-linux-x64" --clobber
