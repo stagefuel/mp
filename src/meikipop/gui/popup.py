@@ -13,6 +13,7 @@ from meikipop.anki import ankiconnect
 from meikipop.config.config import config, IS_MACOS, IS_WINDOWS
 from meikipop.dictionary import freqlist
 from meikipop.dictionary.lookup import DictionaryEntry, KanjiEntry
+from meikipop.gui.kwin_cursor import kwin_cursor
 from meikipop.gui.magpie_manager import magpie_manager
 
 if IS_WINDOWS:
@@ -258,8 +259,18 @@ class Popup(QWidget):
         else:
             self.hide_popup()
 
-        mouse_pos = QCursor.pos()
-        self.move_to(mouse_pos.x(), mouse_pos.y())
+        if self.is_visible:  # nothing to place while hidden (this runs every 10 ms)
+            mouse_pos = self.cursor_pos()
+            self.move_to(mouse_pos.x(), mouse_pos.y())
+
+    @staticmethod
+    def cursor_pos() -> QPoint:
+        """Global cursor position; on KDE Wayland from KWin, since XWayland's is frozen over native windows."""
+        if kwin_cursor.active:
+            position = kwin_cursor.position
+            if position is not None:
+                return QPoint(*position)
+        return QCursor.pos()
 
     @staticmethod
     def _display_len(text):
@@ -598,8 +609,9 @@ class Popup(QWidget):
         horizontal_padding, vertical_padding = self._padding()
         self.display_label.setText(self._join_entries(len(self._entry_htmls)))
         self.display_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._set_footer("Click an entry to add it to Anki  ·  Esc / middle click to close"
-                         if config.anki_enabled else "Esc / middle click to close")
+        close_hint = "Esc / middle click" + (f" / double-tap {config.hotkey}" if config.lock_on_hotkey_double_tap else "")
+        self._set_footer(f"Click an entry to add it to Anki  ·  {close_hint} to close"
+                         if config.anki_enabled else f"{close_hint} to close")
         footer_height = self.footer_label.heightForWidth(self._content_width) + self.content_layout.spacing()
         full_height = self._entry_heights[-1] + footer_height + vertical_padding
 
@@ -656,7 +668,7 @@ class Popup(QWidget):
 
     def _on_click_while_locked(self):
         # clicks inside the popup are for mining/scrolling; anywhere else closes it
-        if not self.geometry().contains(QCursor.pos()):
+        if not self.geometry().contains(self.cursor_pos()):
             logger.info("Popup: click outside, closing.")
             self.unlock()
 
@@ -667,7 +679,7 @@ class Popup(QWidget):
         self.footer_label.show()
 
     def _on_mine_click(self):
-        pos = self.display_label.mapFromGlobal(QCursor.pos())
+        pos = self.display_label.mapFromGlobal(self.cursor_pos())
         logger.info(f"Mining: click in popup at label y={pos.y()}")
         if self.display_label.rect().contains(pos):
             self._mine(self._entry_index_at(pos.y()))

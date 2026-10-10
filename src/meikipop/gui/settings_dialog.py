@@ -231,6 +231,12 @@ class SettingsDialog(QDialog):
                                             "don't open a popup until the mouse moves")
         behavior_layout.addRow("Only Show After Mouse Moves:", self.requires_move_check)
 
+        self.double_tap_check = QCheckBox()
+        self.double_tap_check.setChecked(config.lock_on_hotkey_double_tap)
+        self.double_tap_check.setToolTip("Double-tap the hotkey to lock the open popup for mining, and again to close it "
+                                         "(like middle click; on Wayland this also works over apps meikipop can't see clicks in)")
+        behavior_layout.addRow("Lock With Hotkey Double-Tap:", self.double_tap_check)
+
         self.compact_check = QCheckBox()
         self.compact_check.setChecked(config.compact_mode)
         behavior_layout.addRow("Compact Mode:", self.compact_check)
@@ -643,6 +649,7 @@ class SettingsDialog(QDialog):
             config.magpie_compatibility = self.magpie_check.isChecked()
         config.compact_mode = self.compact_check.isChecked()
         config.popup_requires_mouse_move = self.requires_move_check.isChecked()
+        config.lock_on_hotkey_double_tap = self.double_tap_check.isChecked()
         config.show_all_glosses = self.show_glosses_check.isChecked()
         config.show_deconjugation = self.show_deconj_check.isChecked()
         config.show_pos = self.show_pos_check.isChecked()

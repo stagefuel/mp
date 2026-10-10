@@ -62,6 +62,11 @@ def run_gui():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
+    # KDE Wayland: follow the cursor through KWin, so lookups also work over Wayland-native windows
+    from meikipop.gui.kwin_cursor import kde_wayland, kwin_cursor
+    if kde_wayland():
+        kwin_cursor.start()
+
     input_loop = InputLoop(shared_state)
     popup_window = Popup(shared_state, input_loop)
 
@@ -126,7 +131,8 @@ def main():
         failed = False
         for module in ("meikipop.ocr.providers.meikiocr.provider", "meikipop.ocr.providers.meikiocr.vertical",
                        "meikipop.ocr.providers.glensv2", "meikipop.ocr.providers.owocr",
-                       "meikipop.ocr.providers.screenai", "meikipop.texthooker.feed", "meikipop.anki.ankiconnect"):
+                       "meikipop.ocr.providers.screenai", "meikipop.texthooker.feed", "meikipop.anki.ankiconnect",
+                       "meikipop.gui.kwin_cursor"):
             try:
                 importlib.import_module(module)
                 print(f"ok      {module}")

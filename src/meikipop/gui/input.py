@@ -10,6 +10,7 @@ from pynput import mouse
 from pynput import keyboard as pynput_keyboard
 
 from meikipop.config.config import config, IS_LINUX, IS_MACOS, IS_WINDOWS
+from meikipop.gui.kwin_cursor import kwin_cursor
 
 if IS_LINUX:
     from Xlib import display as xlib_display
@@ -26,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 # win32 messages seen by the low-level hooks
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x0100, 0x0101, 0x0104, 0x0105
+DOUBLE_TAP_SECONDS = 0.4  # two presses of the hotkey this close together lock/unlock the popup
+
 WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEWHEEL = 0x0201, 0x0202, 0x0207, 0x0208, 0x020A
 VK_ESCAPE = 0x1B
 
@@ -296,6 +299,7 @@ class InputLoop(threading.Thread):
         logger.debug("Input thread started.")
         last_mouse_pos = (0, 0)
         hotkey_was_pressed = False
+        last_hotkey_press = 0.0
         self._start_listeners()
 
         if self.x11_grabber:
@@ -309,16 +313,28 @@ class InputLoop(threading.Thread):
                 time.sleep(0.1)
                 continue
             try:
-                current_mouse_pos = self.mouse_controller.position
+                current_mouse_pos = self.get_mouse_pos()
+
+                # double-tap the hotkey: lock/unlock the popup (a keyboard alternative to middle click, which
+                # meikipop can't see over Wayland-native windows)
+                try:
+                    hotkey_down = self.keyboard_controller.is_hotkey_pressed()
+                except Exception:
+                    hotkey_down = False
+                if hotkey_down and not hotkey_was_pressed:
+                    now = time.monotonic()
+                    if (config.lock_on_hotkey_double_tap and now - last_hotkey_press <= DOUBLE_TAP_SECONDS
+                            and self._popup_accepts_lock_toggle()):
+                        self.popup.lock_toggle_requested.emit()
+                        now = 0.0  # a third tap starts a new double tap
+                    last_hotkey_press = now
 
                 # a locked popup freezes the current lookup: no new screenshots, ocr or hit scans
                 if self.shared_state.popup_locked:
                     last_mouse_pos = current_mouse_pos
+                    hotkey_was_pressed = hotkey_down
                     continue
-                try:
-                    hotkey_is_pressed = self.keyboard_controller.is_hotkey_pressed()
-                except Exception:
-                    hotkey_is_pressed = False
+                hotkey_is_pressed = hotkey_down
 
                 # trigger screenshots + ocr in manual mode
                 if hotkey_is_pressed and not hotkey_was_pressed and not config.auto_scan_mode:
@@ -366,6 +382,11 @@ class InputLoop(threading.Thread):
 
     @staticmethod
     def get_mouse_pos():
+        # KDE Wayland: XWayland can't see the pointer over Wayland-native windows, KWin can
+        if kwin_cursor.active:
+            position = kwin_cursor.position
+            if position is not None:
+                return position
         with mouse.Controller() as mc:
             pos = mc.position
             # Convert floats to integers for QPoint compatibility

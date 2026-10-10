@@ -70,6 +70,7 @@ class Config:
             'popup_position_mode': 'always_below',
             'popup_layout': 'jl',
             'popup_requires_mouse_move': True,
+            'lock_on_hotkey_double_tap': True,
             'color_deconjugation': '#4CAF50',
             'color_frequency': '#FFFF00',
             'color_dictionary': '#ADD8E6',
