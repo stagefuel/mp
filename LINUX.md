@@ -1,7 +1,27 @@
 # Linux support (work in progress, branch `linux`)
 
 Target: **KDE Plasma 6 on Wayland** (Aurora / Bazzite / Fedora KDE), games under Wine via XWayland.
-Test machine: **100shiki** (Aurora). Nothing on this branch has been tried on a real Linux desktop yet.
+Test machine: **100shiki** (ThinkPad T470s, Aurora 44, KWin 6.7, 1920x1080 @ 100 %).
+
+## Tested on 100shiki, 2026-10-10 (from source in a distrobox, driven remotely)
+Works on Wayland, over an XWayland window (Firefox run with `--nosocket=wayland --socket=x11`):
+- KDE's "Share screen with" prompt appears on first start; with *Allow restoring* ticked it isn't asked again,
+  also after restarting meikipop. Tray shows KDE's recording indicator while meikipop runs.
+- OCR on the T470s CPU: ~0.5–1.4 s per scan. Hover lookups correct; the popup lands 15 px below-right of the
+  cursor (100 % scaling; other scale factors untested). JL layout, Noto Sans CJK JP render fine.
+- Middle click locks (all entries, scrollable, footer hint), wheel scrolls the popup and not the page,
+  clicking an entry mines it (Anki wasn't running: the footer said so), Esc unlocks.
+Bugs found and fixed on this branch:
+- Wayland capture never started on current PyGObject (`GLib.MainLoop.new` needs `is_running`).
+- "Only Show After Mouse Moves" swallowed the first correct popup after any screen change, because the scan
+  a mouse move starts finishes after the mouse stops (~1 s on this CPU). Scans now carry the mouse position
+  of their screenshot. (Affects Windows too.)
+Known gaps confirmed:
+- Over Wayland-native windows (Konsole) meikipop sees a frozen cursor position → no lookups (to do #3).
+- ~18 % of one core while idle: the 30 fps screen stream itself (to do #4: lower rate / window stream).
+- First-run dictionary download 404s: upstream's `dictionary-latest` release no longer exists (affects every
+  fresh install on every OS, not just Linux).
+- In the distrobox, pynput's `evdev` dependency needs Fedora's `python3-evdev` (no compiler in the box).
 
 ## How meikipop runs on Linux today (upstream)
 - X11: native. Wayland: meikipop forces itself onto **XWayland** (`QT_QPA_PLATFORM=xcb`) so its popup can
@@ -49,7 +69,7 @@ distrobox create -i registry.fedoraproject.org/fedora:44 -n meikipop
 distrobox enter meikipop
 sudo dnf install -y python3 python3-pip python3-gobject gstreamer1 gstreamer1-plugins-base \
     gstreamer1-plugins-good pipewire-gstreamer libxcb xcb-util-cursor xcb-util-wm xcb-util-keysyms \
-    libxkbcommon-x11 google-noto-sans-cjk-fonts git
+    libxkbcommon-x11 google-noto-sans-cjk-fonts python3-evdev git
 git clone -b linux <repo> meikipop && cd meikipop
 python3 -m venv --system-site-packages .venv && . .venv/bin/activate   # system site: python3-gobject
 pip install -e .
