@@ -46,14 +46,14 @@ Known gaps confirmed:
 ## Wayland investigation (100shiki, 2026-10-10) — what "fully functional" needs on KDE
 | Piece | Today | Fix (KDE Plasma 6) | Status |
 |---|---|---|---|
-| Cursor position over Wayland-native windows | frozen (XWayland only sees X11 windows) | **KWin script** (loaded over D-Bus `org.kde.kwin.Scripting.loadScript`) calling `callDBus(...)` on `workspace.cursorPosChanged` → meikipop D-Bus service | **proven**: exact positions over native windows, ~10–25 ms latency; script unloads cleanly |
+| Cursor position over Wayland-native windows | frozen (XWayland only sees X11 windows) | **KWin script** (`gui/kwin_cursor.py`, loaded over D-Bus at start on KDE Wayland, unloaded on exit) | **done + tested**: popups over Konsole at the right spot, ~10–25 ms |
 | Hotkey (Shift) and Esc over native windows | **already work** — KDE's default *Legacy X11 App Support* lets X11 apps see modifier keys and Esc (not letters) | — | tested |
-| Mouse buttons (middle-click lock, click-outside close) over native windows | not seen by meikipop | user option: System Settings → *Legacy X11 App Support* → "include mouse buttons"; and/or a **keyboard lock** (e.g. double-tap the hotkey), which needs no setting | to do |
-| Keeping middle click away from native apps | impossible (X grabs only affect X11 apps); in Konsole/Firefox a middle click pastes the selection | prefer the keyboard lock on Wayland | to do |
-| Popup placement over native windows | uses `QCursor.pos()` (frozen there) | use the KWin position | to do |
-| Idle CPU (~16 % of one T470s core) | **not** the screen stream (10 vs 30 fps, convert order: no difference) — it's the 100 Hz polling: input loop ~10 %, popup timer ~4 % | skip popup work while hidden, poll less often (helps Windows too) | to do |
+| Mouse buttons (middle-click lock, click-outside close) over native windows | not seen by meikipop | **double-tap the hotkey** locks/unlocks (setting, on by default; works on Windows too); optional KDE setting *Legacy X11 App Support → include mouse buttons* for middle click | **done + tested** over Konsole |
+| Keeping middle click away from native apps | impossible (X grabs only affect X11 apps); in Konsole/Firefox a middle click pastes the selection | use the double-tap on Wayland | by design |
+| Popup placement over native windows | used `QCursor.pos()` (frozen there) | uses the KWin position | **done + tested** |
+| Idle CPU | was ~16 % of one T470s core — **not** the screen stream (10 vs 30 fps made no difference) but the 100 Hz polling | popup skips work while hidden; cursor from KWin instead of an X round trip | **done: ~8 %** |
 | Display scaling ≠ 100 %, multi-monitor | untested | test, then map portal pixels ↔ XWayland coordinates | to do (needs a scale change on the test box) |
-| Region selector overlay on Wayland | untested (tests used scan_region = 1) | test | to do |
+| Region selector overlay on Wayland | — | — | **tested**: overlay, drag, offset hover all correct |
 | GNOME | no KWin scripting; would need a GNOME Shell extension or ScreenCast cursor metadata | out of scope for now | — |
 | Packaging | distrobox from source | Flatpak (KDE runtime has GStreamer/PipeWire); needs `--talk-name=org.kde.KWin` for the script | to do |
 
