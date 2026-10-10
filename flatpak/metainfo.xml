@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <component type="desktop-application">
-  <id>com.github.rtr46.meikipop</id>
+  <id>io.github.stagefuel.meikipop</id>
 
   <name>meikipop</name>
   <summary>Instantly look up Japanese words anywhere on your screen</summary>
@@ -9,7 +9,7 @@
         rtr46
     </name>
   </developer>
-  <url type="homepage">https://github.com/rtr46/meikipop</url>
+  <url type="homepage">https://github.com/stagefuel/mp</url>
   <content_rating type="oars-1.1" />
 
   <metadata_license>CC0-1.0</metadata_license>
@@ -21,7 +21,7 @@
     </p>
   </description>
 
-  <launchable type="desktop-id">com.github.rtr46.meikipop.desktop</launchable>
+  <launchable type="desktop-id">io.github.stagefuel.meikipop.desktop</launchable>
   <screenshots>
     <screenshot type="default">
       <image>

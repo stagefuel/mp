@@ -112,3 +112,42 @@ jobs:
           mv dist/meikipop "dist/meikipop-$TAG-linux-x64"
           sha256sum "dist/meikipop-$TAG-linux-x64"
           gh release upload "$TAG" "dist/meikipop-$TAG-linux-x64" --clobber
+
+  build-flatpak:
+    # flatpak bundle (KDE runtime): the way to run it on Wayland, incl. screen capture and the KWin cursor
+    runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.10
+      options: --privileged
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: build the dictionary to bundle (upstream's download link is gone)
+        run: |
+          python3 -m pip install --user requests lxml platformdirs
+          PYTHONPATH=src python3 -m meikipop.scripts.build_dictionary
+          cp "$(PYTHONPATH=src python3 -c 'from meikipop.utils.paths import paths; print(paths.dictionary_path)')" src/meikipop/resources/dictionary.pkl
+
+      - name: generate python flatpak dependencies
+        run: python3 flatpak/gen_deps.py
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: meikipop-${{ github.event.release.tag_name }}-linux-x64.flatpak
+          manifest-path: flatpak/manifest.yml
+          upload-artifact: false
+
+      - name: attach to the release
+        # plain curl: the flatpak build image doesn't necessarily have the gh cli
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPLOAD_URL: ${{ github.event.release.upload_url }}
+        run: |
+          FILE="meikipop-$TAG-linux-x64.flatpak"
+          sha256sum "$FILE"
+          curl --fail -sS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+            --data-binary @"$FILE" "${UPLOAD_URL%\{*}?name=$FILE" > /dev/null

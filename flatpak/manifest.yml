@@ -1,4 +1,4 @@
-id: com.github.rtr46.meikipop
+id: io.github.stagefuel.meikipop
 runtime: org.kde.Platform
 runtime-version: "6.10"
 sdk: org.kde.Sdk
@@ -12,6 +12,9 @@ finish-args:
   - "--share=ipc"
   - "--share=network"
   - --talk-name=org.kde.StatusNotifierWatcher
+  # KDE Wayland: load the KWin script that reports the cursor position, and receive its calls
+  - --talk-name=org.kde.KWin
+  - --own-name=io.github.meikipop.Cursor
   - "--filesystem=xdg-config/meikipop:rw"
   - "--filesystem=xdg-config/screen_ai:rw"
   - "--filesystem=xdg-data/meikipop:rw"
@@ -40,9 +43,9 @@ modules:
         EOF
       - pip3 install --no-index --find-links=. --prefix=/app --no-build-isolation
         --no-deps .
-      - install -Dm644 flatpak/meikipop.desktop /app/share/applications/com.github.rtr46.meikipop.desktop
-      - install -Dm644 flatpak/metainfo.xml /app/share/metainfo/com.github.rtr46.meikipop.metainfo.xml
-      - install -Dm644 icon.png /app/share/icons/hicolor/256x256/apps/com.github.rtr46.meikipop.png
+      - install -Dm644 flatpak/meikipop.desktop /app/share/applications/io.github.stagefuel.meikipop.desktop
+      - install -Dm644 flatpak/metainfo.xml /app/share/metainfo/io.github.stagefuel.meikipop.metainfo.xml
+      - install -Dm644 icon.png /app/share/icons/hicolor/256x256/apps/io.github.stagefuel.meikipop.png
     sources:
       - type: dir
         path: ..

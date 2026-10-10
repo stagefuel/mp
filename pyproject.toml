@@ -44,4 +44,5 @@ where = ["src"]
 include = ["meikipop*"]
 
 [tool.setuptools.package-data]
-meikipop = ["scripts/deconjugator.json", "resources/icon.ico", "resources/icon.inactive.ico"]
+meikipop = ["scripts/deconjugator.json", "resources/icon.ico", "resources/icon.inactive.ico",
+            "resources/dictionary.pkl"]  # dictionary.pkl only exists in release builds

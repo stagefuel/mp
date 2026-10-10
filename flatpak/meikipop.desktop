@@ -1,8 +1,8 @@
 [Desktop Entry]
 Name=Meikipop
-Comment=Japanese OCR Popup Dictionary
+Comment=Japanese OCR popup dictionary (stagefuel fork)
 Exec=meikipop
-Icon=com.github.rtr46.meikipop
+Icon=io.github.stagefuel.meikipop
 Terminal=false
 Type=Application
 Categories=Education;Languages;Utility;
