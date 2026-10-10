@@ -2,6 +2,7 @@
 import logging
 import os
 import pickle
+import shutil
 import time
 import urllib.request
 import zipfile
@@ -66,16 +67,39 @@ class Dictionary:
                 config.save()
             return True
         except FileNotFoundError:
-            logger.warning(f"Dictionary file not found. Trying download...")
-            if self._download_dictionary():
-                return self.load_dictionary(file_path)  # retry once after download
+            logger.warning("Dictionary file not found, installing it...")
+            if self._install_dictionary(file_path):
+                return self.load_dictionary(file_path)  # retry once after installing
             logger.error(
-                "Dictionary could not be downloaded. "
+                "No dictionary could be installed. "
                 "You can build it manually by running 'meikipop build-dict'."
             )
             return False
         except Exception as e:
             logger.error(f"Failed to load dictionary: {e}")
+            return False
+
+    def _install_dictionary(self, file_path: str) -> bool:
+        """First run: use the dictionary bundled with the exe, else download it (upstream's release, which was
+        removed in Oct 2026), else build it here from JMdict (a few minutes, needs internet once)."""
+        bundled = paths.get_resource_path('dictionary.pkl')
+        if os.path.exists(bundled):
+            try:
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                shutil.copyfile(bundled, file_path)
+                logger.info("Installed the dictionary bundled with this build.")
+                return True
+            except OSError as e:
+                logger.error(f"Could not copy the bundled dictionary: {e}")
+        if self._download_dictionary():
+            return True
+        logger.warning("Building the dictionary from JMdict instead - this takes a few minutes, once...")
+        try:
+            from meikipop.scripts.build_dictionary import main as build_dictionary
+            build_dictionary()
+            return os.path.exists(file_path)
+        except BaseException as e:  # the build script exits via sys.exit on errors
+            logger.error(f"Building the dictionary failed: {e!r}")
             return False
 
     def _download_dictionary(self) -> bool:

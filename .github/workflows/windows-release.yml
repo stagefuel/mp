@@ -32,6 +32,13 @@ jobs:
           pip install -e .
           pip install pyinstaller
 
+      - name: build the dictionary to bundle (upstream's download link is gone)
+        shell: pwsh
+        run: |
+          python -m meikipop.scripts.build_dictionary
+          $dict = python -c "from meikipop.utils.paths import paths; print(paths.dictionary_path)"
+          Copy-Item $dict src\meikipop\resources\dictionary.pkl
+
       - name: build with pyinstaller
         run: pyinstaller --noconfirm meikipop.win.x64.spec
 
