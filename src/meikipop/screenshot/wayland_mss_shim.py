@@ -236,7 +236,7 @@ class ScreenCastManager:
         context.push_thread_default()
         
         try:
-            self.loop = GLib.MainLoop.new(context)
+            self.loop = GLib.MainLoop.new(context, False)  # newer PyGObject requires the is_running argument
             self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
             self.sender_name = re.sub(r'\.', r'_', self.bus.get_unique_name()[1:])
 

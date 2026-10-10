@@ -18,19 +18,30 @@ class HitScanner(threading.Thread):
         self.screen_manager = screen_manager
         self.last_ocr_result = None
         self._last_mouse_pos = None
+        self._last_item = None
+        self._capture_pos = None  # mouse position when the current scan's screenshot was taken
+        self._previous_capture_pos = None  # ... and the scan before it
 
     def run(self):
         logger.debug("HitScanner thread started.")
         while self.shared_state.running:
             try:
-                ocr_result = self.shared_state.hit_scan_queue.get()
+                item = self.shared_state.hit_scan_queue.get()
                 if not self.shared_state.running: break
                 logger.debug("HitScanner: Triggered")
+                ocr_result, capture_pos = item if isinstance(item, tuple) else (item, None)
+                if item is not self._last_item:  # a new scan, not a mouse move re-using the last one
+                    self._last_item = item
+                    self._previous_capture_pos, self._capture_pos = self._capture_pos, capture_pos
                 hit_scan_result = self.hit_scan(ocr_result)
                 # a lookup is asked for by the user when the mouse moved (or the hotkey / a manual scan
-                # triggered it), as opposed to new ocr text appearing under a resting mouse
+                # triggered it), as opposed to new ocr text appearing under a resting mouse. A scan whose
+                # screenshot was taken after the mouse moved counts too: it usually finishes after the mouse
+                # has stopped (the move is what started it), and its text is what the user moved onto.
                 mouse_pos = self.input_loop.get_mouse_pos()
-                user_triggered = (mouse_pos != self._last_mouse_pos or not config.auto_scan_mode
+                scan_after_move = (self._capture_pos is not None and self._previous_capture_pos is not None
+                                   and self._capture_pos != self._previous_capture_pos)
+                user_triggered = (mouse_pos != self._last_mouse_pos or scan_after_move or not config.auto_scan_mode
                                   or self.input_loop.keyboard_controller.is_hotkey_pressed())
                 self._last_mouse_pos = mouse_pos
                 self.shared_state.lookup_queue.put((hit_scan_result, user_triggered))

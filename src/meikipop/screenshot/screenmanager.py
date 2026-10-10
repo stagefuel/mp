@@ -66,6 +66,7 @@ class ScreenManager(threading.Thread):
                         and self.last_mouse_pos == self.input_loop.get_mouse_pos()):
                     continue
                 self.last_mouse_pos = self.input_loop.get_mouse_pos()
+                capture_mouse_pos = self.last_mouse_pos  # where the mouse was when this screenshot was taken
 
                 logger.debug("screenmanager acquiring lock...")
                 with self.shared_state.screen_lock:
@@ -86,7 +87,7 @@ class ScreenManager(threading.Thread):
                 self.last_screenshot = screenshot
                 self.last_mouse_pos = self.input_loop.get_mouse_pos()
                 img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
-                self.shared_state.ocr_queue.put(img)
+                self.shared_state.ocr_queue.put((img, capture_mouse_pos))
                 self.last_ocr_put_time = time.perf_counter()
             except:
                 logger.exception("An unexpected error occurred in the screenshot loop. Continuing...")

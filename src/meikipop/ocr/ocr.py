@@ -32,8 +32,9 @@ class OcrProcessor(threading.Thread):
         logger.debug("OCR thread started.")
         while self.shared_state.running:
             try:
-                screenshot = self.shared_state.ocr_queue.get()
+                item = self.shared_state.ocr_queue.get()
                 if not self.shared_state.running: break
+                screenshot, capture_mouse_pos = item if isinstance(item, tuple) else (item, None)
 
                 logger.debug("OCR: Triggered!")
 
@@ -43,7 +44,7 @@ class OcrProcessor(threading.Thread):
                     f"{self.ocr_backend.NAME} found {len(ocr_result) if ocr_result else 0} paragraphs in {(time.perf_counter() - start_time):.3f}s.")
                 # todo keep last ocr result?
 
-                self.shared_state.hit_scan_queue.put(ocr_result)
+                self.shared_state.hit_scan_queue.put((ocr_result, capture_mouse_pos))
                 if self.shared_state.text_feed:
                     self.shared_state.text_feed.process_scan(ocr_result)
             except:
