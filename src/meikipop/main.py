@@ -1,5 +1,6 @@
 # meikipop/main.py
 import argparse
+import os
 import signal
 import sys
 import threading
@@ -132,6 +133,14 @@ def main():
             except Exception as e:
                 failed = True
                 print(f"FAILED  {module}: {e!r}")
+        if getattr(sys, 'frozen', False):
+            from meikipop.utils.paths import paths
+            bundled = paths.get_resource_path('dictionary.pkl')
+            if os.path.exists(bundled):
+                print(f"ok      bundled dictionary ({os.path.getsize(bundled) / 1048576:.1f} MB)")
+            else:
+                failed = True
+                print("FAILED  no bundled dictionary")
         sys.exit(1 if failed else 0)
     elif args.command == "build-dict":
         from meikipop.scripts.build_dictionary import main as build_main

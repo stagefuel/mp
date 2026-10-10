@@ -30,3 +30,6 @@ src/meikipop.egg-info/
 bundle-repo
 **.flatpak
 python3-deps.json
+
+# dictionary bundled into release builds (built in CI by build_dictionary)
+src/meikipop/resources/dictionary.pkl

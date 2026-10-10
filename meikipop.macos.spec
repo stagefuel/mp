@@ -1,3 +1,4 @@
+import os
 # -*- mode: python ; coding: utf-8 -*-
 
 import re
@@ -43,7 +44,8 @@ a = Analysis(
         ('src/meikipop/resources/icon.ico', 'meikipop/resources'),
         ('src/meikipop/resources/icon.inactive.ico', 'meikipop/resources'),
         ('src/meikipop/scripts/deconjugator.json', 'meikipop/scripts'),
-    ],
+    ] + ([('src/meikipop/resources/dictionary.pkl', 'meikipop/resources')]
+         if os.path.exists('src/meikipop/resources/dictionary.pkl') else []),  # built in CI
     hiddenimports=['meikipop.ocr.providers.glensv2', 'meikipop.ocr.providers.owocr', 'meikipop.ocr.providers.meikiocr', 'meikipop.ocr.providers.meikiocr.vertical', 'meikipop.ocr.providers.screenai'],
     hookspath=[],
     hooksconfig={},
