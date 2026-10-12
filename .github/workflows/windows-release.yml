@@ -1,25 +1,64 @@
 # .github/workflows/windows-release.yml
 # builds the windows exe (and a linux x11 binary) for this fork and attaches them, plus the matching source, to the
 # release that triggered it.
-# publishing a release is the only trigger, so nothing runs on pushes or on a schedule.
+# publishing a release triggers it; it can also be run by hand on any branch/tag to test the builds without a release
+# (the files are then kept as workflow artifacts instead). nothing runs on pushes or on a schedule.
 name: release build
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: branch or tag to build
+        required: true
+        default: linux
 
 permissions:
   contents: write  # upload the release assets
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    env:
-      TAG: ${{ github.event.release.tag_name }}
+  dictionary:
+    # built once from JMdict and shared by every build (upstream's download link is gone). plain ubuntu python, so
+    # the flatpak build container's python doesn't need requests/lxml
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || inputs.ref }}
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: build the dictionary
+        run: |
+          pip install requests lxml platformdirs
+          PYTHONPATH=src python -m meikipop.scripts.build_dictionary
+          cp "$(PYTHONPATH=src python -c 'from meikipop.utils.paths import paths; print(paths.dictionary_path)')" dictionary.pkl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dictionary
+          path: dictionary.pkl
+          retention-days: 3
+
+  build-windows:
+    runs-on: windows-latest
+    needs: dictionary
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dictionary
+          path: src/meikipop/resources
 
       - name: set up python
         uses: actions/setup-python@v5
@@ -32,13 +71,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
           pip install pyinstaller
-
-      - name: build the dictionary to bundle (upstream's download link is gone)
-        shell: pwsh
-        run: |
-          python -m meikipop.scripts.build_dictionary
-          $dict = python -c "from meikipop.utils.paths import paths; print(paths.dictionary_path)"
-          Copy-Item $dict src\meikipop\resources\dictionary.pkl
 
       - name: build with pyinstaller
         run: pyinstaller --noconfirm meikipop.win.x64.spec
@@ -60,20 +92,34 @@ jobs:
           Get-FileHash "dist\meikipop-$env:TAG-windows-x64.exe" -Algorithm SHA256 | Format-List
 
       - name: attach to the release
+        if: github.event_name == 'release'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload $env:TAG "dist\meikipop-$env:TAG-windows-x64.exe" "dist\meikipop-$env:TAG-source.zip" --clobber
 
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'release'
+        with:
+          name: windows-x64
+          path: dist/meikipop-*-windows-x64.exe
+          retention-days: 7
+
   build-linux:
     # single-file x86_64 binary for X11 sessions (on Wayland, run from source / Flatpak - see LINUX.md)
     runs-on: ubuntu-22.04  # older glibc, so the binary runs on current distros too
+    needs: dictionary
     env:
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ github.event.release.tag_name || inputs.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || inputs.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dictionary
+          path: src/meikipop/resources
 
       - name: set up python
         uses: actions/setup-python@v5
@@ -92,20 +138,18 @@ jobs:
           pip install -e .
           pip install pyinstaller
 
-      - name: build the dictionary to bundle (upstream's download link is gone)
-        run: |
-          python -m meikipop.scripts.build_dictionary
-          cp "$(python -c 'from meikipop.utils.paths import paths; print(paths.dictionary_path)')" src/meikipop/resources/dictionary.pkl
-
       - name: build with pyinstaller
         run: pyinstaller --noconfirm meikipop.linux.x64.spec
 
       - name: smoke test (starts, every OCR provider can be imported)
+        shell: bash
         run: |
-          xvfb-run -a dist/meikipop --help | grep -q "usage: meikipop"
-          xvfb-run -a dist/meikipop self-test
+          xvfb-run -a dist/meikipop --help 2>&1 | tee help.txt
+          grep -q "usage: meikipop" help.txt
+          xvfb-run -a dist/meikipop self-test 2>&1
 
       - name: attach to the release
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -113,35 +157,43 @@ jobs:
           sha256sum "dist/meikipop-$TAG-linux-x64"
           gh release upload "$TAG" "dist/meikipop-$TAG-linux-x64" --clobber
 
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'release'
+        with:
+          name: linux-x64
+          path: dist/meikipop
+          retention-days: 7
+
   build-flatpak:
     # flatpak bundle (KDE runtime): the way to run it on Wayland, incl. screen capture and the KWin cursor
     runs-on: ubuntu-22.04
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.10
       options: --privileged
+    needs: dictionary
     env:
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ github.event.release.tag_name || inputs.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || inputs.ref }}
 
-      - name: build the dictionary to bundle (upstream's download link is gone)
-        run: |
-          python3 -m pip install --user requests lxml platformdirs
-          PYTHONPATH=src python3 -m meikipop.scripts.build_dictionary
-          cp "$(PYTHONPATH=src python3 -c 'from meikipop.utils.paths import paths; print(paths.dictionary_path)')" src/meikipop/resources/dictionary.pkl
+      - uses: actions/download-artifact@v4
+        with:
+          name: dictionary
+          path: src/meikipop/resources
 
       - name: generate python flatpak dependencies
         run: python3 flatpak/gen_deps.py
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          bundle: meikipop-${{ github.event.release.tag_name }}-linux-x64.flatpak
+          bundle: meikipop-${{ github.event.release.tag_name || inputs.ref }}-linux-x64.flatpak
           manifest-path: flatpak/manifest.yml
-          upload-artifact: false
+          upload-artifact: ${{ github.event_name != 'release' }}
 
       - name: attach to the release
+        if: github.event_name == 'release'
         # plain curl: the flatpak build image doesn't necessarily have the gh cli
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
