@@ -197,10 +197,11 @@ class X11InputGrabber(threading.Thread):
 
 
 class InputLoop(threading.Thread):
+    _mouse_controller = None
+
     def __init__(self, shared_state):
         super().__init__(daemon=True, name="InputLoop")
         self.shared_state = shared_state
-        self.mouse_controller = mouse.Controller()
 
         self.hotkey_str = config.hotkey.lower()
         if IS_LINUX:
@@ -387,7 +388,10 @@ class InputLoop(threading.Thread):
             position = kwin_cursor.position
             if position is not None:
                 return position
-        with mouse.Controller() as mc:
-            pos = mc.position
-            # Convert floats to integers for QPoint compatibility
-            return (int(pos[0]), int(pos[1]))
+        try:
+            pos = InputLoop._mouse_controller.position
+        except Exception:
+            InputLoop._mouse_controller = mouse.Controller()
+            pos = InputLoop._mouse_controller.position
+        # Convert floats to integers for QPoint compatibility
+        return int(pos[0]), int(pos[1])
