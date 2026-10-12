@@ -1,4 +1,5 @@
 import os
+from PyInstaller.utils.hooks import collect_submodules
 # -*- mode: python ; coding: utf-8 -*-
 
 
@@ -25,7 +26,9 @@ a = Analysis(
         ('src/meikipop/scripts/deconjugator.json', 'meikipop/scripts'),
     ] + ([('src/meikipop/resources/dictionary.pkl', 'meikipop/resources')]
          if os.path.exists('src/meikipop/resources/dictionary.pkl') else []),  # built in CI
-    hiddenimports=['meikipop.ocr.providers.glensv2', 'meikipop.ocr.providers.owocr', 'meikipop.ocr.providers.meikiocr', 'meikipop.ocr.providers.meikiocr.vertical', 'meikipop.ocr.providers.screenai'],
+    hiddenimports=['meikipop.ocr.providers.glensv2', 'meikipop.ocr.providers.owocr', 'meikipop.ocr.providers.meikiocr', 'meikipop.ocr.providers.meikiocr.vertical', 'meikipop.ocr.providers.screenai',
+                   # pynput picks its backend at runtime, and python-xlib loads its extensions by name
+                   'pynput.keyboard._xorg', 'pynput.mouse._xorg', 'pynput._util.xorg'] + collect_submodules('Xlib'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
