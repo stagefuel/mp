@@ -8,13 +8,15 @@ https://github.com/user-attachments/assets/a1834197-3059-438c-a2dc-716e8ec9078f
 
 ## this fork (stagefuel/meikipop)
 
-based on upstream v2.0.5, with:
+based on upstream v2.0.6, with:
 
 *   **always below cursor:** a popup position mode that never jumps above the mouse; long lookups are cut to fit instead.
 *   **max popup size:** max popup width/height (% of screen) in settings → general.
 *   **jl-style popup:** settings → popup appearance → layout "JL" + preset "JL" (word, reading, conjugation like `撫でている ～teiru`, frequency, one line per meaning). settings → general → frequency list can point at JL's `freqlist_vns.json` (or any nazeka-format list) so the numbers match JL.
 *   **texthooker feed:** settings → general → texthooker (websocket) serves each new ocr'd line on `ws://localhost:9001` (the port textractor/lunahost use) for pages like kizuna-texthooker-ui. lines are only sent once they've read the same in 2 scans (no half-typed text), never resent while still on screen, only the new part is sent if a line keeps growing, and nothing is replayed when the page reloads. needs auto scan; while it's on, scans don't wait for the mouse to move. scan just the text box so menus/other windows aren't sent. don't run it at the same time as another program serving on the same port.
 *   **anki mining (like [JL](https://github.com/rampaa/JL)):** middle click while a popup is open to lock it in place. while locked, ocr and lookups are paused, every entry is shown (scrollable), and left clicking an entry adds it to anki through [AnkiConnect](https://ankiweb.net/shared/info/2055492159). esc, middle click, or clicking anywhere outside the popup closes it. on windows the middle click and esc are swallowed so the game underneath doesn't react to them. deck, note type, tags, duplicates and the field mapping (word, reading, definitions, reading + definitions, first definition, sentence, part of speech, frequency) are in settings → anki; out of the box it adds to the `Default` deck as a `Basic` card (front: word, back: reading + definitions). definitions are formatted like JL's: `(1) (n) gloss; gloss<br/>(2) ...`.
+*   **updates from inside meikipop:** a few seconds after starting it checks this repo's releases (turn off in settings → general). when there's a new version the tray menu shows "update to …"; it downloads it, closes, and starts the new version with your settings kept. works for the windows exe, the linux binary and the flatpak; copies run from source are only told about it. "check for updates…" in the tray menu checks by hand.
+*   **one meikipop at a time:** starting it again while it's running opens the running one's settings instead of a second copy.
 
 ## features
 
@@ -48,7 +50,7 @@ note that when meikipop is started for the first time, the dictionary (~40 mb) a
 3. a console window opens next to the tray icon; leave it open (closing it quits meikipop). settings, the dictionary and a log of the last session (`meikipop.log`) are kept in `%LOCALAPPDATA%\meikipop`.
 4. the first time, select the part of the screen to scan (see [how to use](#how-to-use)).
 
-to update, quit meikipop from the tray and replace the exe; settings are kept.
+to update, use *update to …* / *check for updates…* in the tray menu (2.0.6-fork.1 and later). older versions: quit meikipop from the tray and replace the exe; settings are kept.
 
 ### from source (any platform)
 
