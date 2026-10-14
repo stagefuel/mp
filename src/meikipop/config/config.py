@@ -43,6 +43,7 @@ class Config:
             'texthooker_enabled': False,
             'texthooker_port': 9001,
             'texthooker_stable_scans': 2,
+            'check_for_updates': True,
             'validated_dict_ts': -1
         },
         'Theme': {

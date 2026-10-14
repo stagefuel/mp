@@ -130,6 +130,12 @@ class SettingsDialog(QDialog):
             self.magpie_check.setToolTip("Enable transformations for compatibility with Magpie game scaler.")
             core_layout.addRow("Magpie Compatibility:", self.magpie_check)
 
+        self.check_updates_check = QCheckBox()
+        self.check_updates_check.setChecked(config.check_for_updates)
+        self.check_updates_check.setToolTip("Look for a new meikipop release a few seconds after starting.\n"
+                                            "You're asked before anything is downloaded.")
+        core_layout.addRow("Check For Updates On Start:", self.check_updates_check)
+
         core_group.setLayout(core_layout)
         self.tab_general_layout.addWidget(core_group)
 
@@ -625,6 +631,7 @@ class SettingsDialog(QDialog):
         config.glens_low_bandwidth = self.glens_compression_check.isChecked()
         config.max_lookup_length = self.max_lookup_spin.value()
         config.texthooker_enabled = self.texthooker_check.isChecked()
+        config.check_for_updates = self.check_updates_check.isChecked()
         config.texthooker_port = self.texthooker_port_spin.value()
         config.frequency_list_path = self.freq_path_edit.text().strip()
         config.anki_enabled = self.anki_enabled_check.isChecked()

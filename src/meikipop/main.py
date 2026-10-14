@@ -5,7 +5,7 @@ import signal
 import sys
 import threading
 
-from PyQt6.QtCore import qInstallMessageHandler
+from PyQt6.QtCore import Qt, qInstallMessageHandler
 from PyQt6.QtWidgets import QApplication
 
 from meikipop.utils.logger import setup_logging
@@ -13,7 +13,9 @@ from meikipop.config.config import APP_NAME, APP_VERSION
 from meikipop.dictionary.lookup import Lookup
 from meikipop.gui.input import InputLoop
 from meikipop.gui.popup import Popup
+from meikipop.gui.single_instance import SingleInstance
 from meikipop.gui.tray import TrayIcon
+from meikipop.gui.updates import UpdateManager
 from meikipop.ocr.hit_scan import HitScanner
 from meikipop.ocr.ocr import OcrProcessor
 from meikipop.screenshot.screenmanager import ScreenManager
@@ -62,6 +64,13 @@ def run_gui():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
+    # one meikipop at a time: a second launch opens the running one's settings and exits
+    single_instance = SingleInstance()
+    if single_instance.notify_running():
+        print(f"{APP_NAME} is already running - opened its settings instead.")
+        sys.exit(0)
+    single_instance.listen()
+
     input_loop = InputLoop(shared_state)
     popup_window = Popup(shared_state, input_loop)
 
@@ -72,6 +81,10 @@ def run_gui():
     ocr_processor = OcrProcessor(shared_state, screen_manager)
     hit_scanner = HitScanner(shared_state, input_loop, screen_manager)
     tray_icon = TrayIcon(screen_manager, ocr_processor, popup_window, input_loop, lookup)
+    # queued, so the other launch's connection is handled before the settings dialog's own event loop starts
+    single_instance.activated.connect(tray_icon.show_settings, Qt.ConnectionType.QueuedConnection)
+    tray_icon.update_manager = UpdateManager(tray_icon, single_instance)
+    tray_icon.update_manager.start()
 
     for t in [lookup, hit_scanner, ocr_processor, screen_manager, input_loop]:
         t.start()
@@ -126,7 +139,8 @@ def main():
         failed = False
         for module in ("meikipop.ocr.providers.meikiocr.provider", "meikipop.ocr.providers.meikiocr.vertical",
                        "meikipop.ocr.providers.glensv2", "meikipop.ocr.providers.owocr",
-                       "meikipop.ocr.providers.screenai", "meikipop.texthooker.feed", "meikipop.anki.ankiconnect"):
+                       "meikipop.ocr.providers.screenai", "meikipop.texthooker.feed", "meikipop.anki.ankiconnect",
+                       "meikipop.utils.updater", "meikipop.gui.updates", "meikipop.gui.single_instance"):
             try:
                 importlib.import_module(module)
                 print(f"ok      {module}")

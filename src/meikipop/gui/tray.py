@@ -34,6 +34,7 @@ class TrayIcon(QSystemTrayIcon):
         self.input_loop = input_loop
         self.lookup = lookup
         self.scan_area_actions = []
+        self.settings_dialog = None
 
         self.menu = QMenu()
 
@@ -102,6 +103,11 @@ class TrayIcon(QSystemTrayIcon):
         self.activated.connect(self.on_tray_activated)
 
         self.menu.addSeparator()
+
+        # set up by main.py once the tray exists (gui/updates.py)
+        self.update_manager = None
+        self.update_action = self.menu.addAction("Check for Updates…")
+        self.update_action.triggered.connect(self._on_update_action)
 
         self.menu.addAction("Quit").triggered.connect(QApplication.instance().quit)
 
@@ -185,9 +191,32 @@ class TrayIcon(QSystemTrayIcon):
                 action.setChecked(True)
                 break
 
+    def _on_update_action(self):
+        if not self.update_manager:
+            return
+        if self.update_manager.available:
+            self.update_manager.prompt()
+        else:
+            self.update_manager.check(manual=True)
+
+    def set_update_available(self, update):
+        font = self.update_action.font()
+        font.setBold(update is not None)
+        self.update_action.setFont(font)
+        self.update_action.setText(f"Update to {update.version}…" if update else "Check for Updates…")
+
     def show_settings(self):
-        settings_dialog = SettingsDialog(self.ocr_processor, self.popup_window, self.input_loop, self.lookup, self)
-        settings_dialog.exec()
+        # a second launch of meikipop asks for this too, so bring an open dialog forward instead of stacking another
+        if self.settings_dialog is not None:
+            self.settings_dialog.raise_()
+            self.settings_dialog.activateWindow()
+            return
+        self.settings_dialog = SettingsDialog(self.ocr_processor, self.popup_window, self.input_loop, self.lookup,
+                                              self)
+        try:
+            self.settings_dialog.exec()
+        finally:
+            self.settings_dialog = None
 
     def prevent_ghost_icon_on_win(self):
         if IS_WINDOWS:
