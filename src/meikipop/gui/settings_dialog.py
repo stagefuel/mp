@@ -9,9 +9,11 @@ from PyQt6.QtWidgets import (QWidget, QDialog, QFormLayout, QComboBox,
 from meikipop.anki import ankiconnect
 from meikipop.dictionary.lookup import Lookup
 from meikipop.config.config import config, APP_NAME, IS_WINDOWS
+from meikipop.gui.foreground import ForegroundWatcher
 from meikipop.gui.input import InputLoop
 from meikipop.gui.popup import Popup
 from meikipop.ocr.ocr import OcrProcessor
+from meikipop.utils import autostart
 
 THEMES = {
     "Default": {
@@ -136,8 +138,62 @@ class SettingsDialog(QDialog):
                                             "You're asked before anything is downloaded.")
         core_layout.addRow("Check For Updates On Start:", self.check_updates_check)
 
+        self.run_on_startup_check = QCheckBox()
+        self.run_on_startup_check.setChecked(config.run_on_startup)
+        self.run_on_startup_check.setEnabled(autostart.supported())
+        core_layout.addRow("Run On Startup:", self.run_on_startup_check)
+
+        self.copy_line_edit = QLineEdit(config.copy_line_hotkey)
+        self.copy_line_edit.setPlaceholderText("off")
+        self.copy_line_edit.setToolTip("Copies the text under the mouse (or the whole scan area) to the clipboard.\n"
+                                       "Keys joined with +, e.g. ctrl+alt+c. Empty turns it off.")
+        core_layout.addRow("Copy Line Hotkey:", self.copy_line_edit)
+
         core_group.setLayout(core_layout)
         self.tab_general_layout.addWidget(core_group)
+
+        # --- Games: per-game scan areas, pause outside games ---
+        games_group = QGroupBox("Games")
+        games_layout = QFormLayout()
+        self.form_layouts.append(games_layout)
+        watch_supported = ForegroundWatcher.supported()
+        unsupported_tip = "Needs to see the focused window, which isn't possible in this session."
+
+        self.per_game_area_check = QCheckBox()
+        self.per_game_area_check.setChecked(config.per_game_scan_area)
+        self.per_game_area_check.setToolTip("A scan area chosen from the tray is saved for the game you were in,\n"
+                                            "and comes back when you switch to that game." if watch_supported
+                                            else unsupported_tip)
+        self.per_game_area_check.setEnabled(watch_supported)
+        games_layout.addRow("Remember Scan Area Per Game:", self.per_game_area_check)
+
+        self.pause_outside_games_check = QCheckBox()
+        self.pause_outside_games_check.setChecked(config.pause_outside_games)
+        self.pause_outside_games_check.setToolTip("Only scan while a game you've saved a scan area for is focused."
+                                                  if watch_supported else unsupported_tip)
+        self.pause_outside_games_check.setEnabled(watch_supported)
+        games_layout.addRow("Pause Outside Games:", self.pause_outside_games_check)
+
+        game_areas = getattr(self.tray_icon, 'game_areas', None)
+        saved_row = QWidget()
+        saved_layout = QHBoxLayout(saved_row)
+        saved_layout.setContentsMargins(0, 0, 0, 0)
+        self.saved_games_label = QLabel()
+        forget_button = QPushButton("Forget All")
+        forget_button.clicked.connect(self._forget_game_areas)
+        saved_layout.addWidget(self.saved_games_label)
+        saved_layout.addStretch()
+        saved_layout.addWidget(forget_button)
+        if game_areas:
+            names = sorted(entry.get('name', '?') for entry in game_areas.areas.values())
+            self.saved_games_label.setToolTip("\n".join(names))
+        self._update_saved_games_label()
+        forget_button.setEnabled(bool(game_areas and game_areas.areas))
+        self._forget_button = forget_button
+        games_layout.addRow("Saved Games:", saved_row)
+
+        games_group.setLayout(games_layout)
+        self.tab_general_layout.addWidget(games_group)
 
         # --- Group 2: Auto Scan Mode ---
         auto_group = QGroupBox("Auto Scan Mode")
@@ -626,6 +682,18 @@ class SettingsDialog(QDialog):
             self._update_color_buttons()
             self._mark_as_custom()
 
+    def _update_saved_games_label(self):
+        game_areas = getattr(self.tray_icon, 'game_areas', None)
+        self.saved_games_label.setText(str(len(game_areas.areas)) if game_areas else "0")
+
+    def _forget_game_areas(self):
+        game_areas = getattr(self.tray_icon, 'game_areas', None)
+        if game_areas:
+            game_areas.forget_all()
+        self.saved_games_label.setToolTip("")
+        self._update_saved_games_label()
+        self._forget_button.setEnabled(False)
+
     def save_and_accept(self):
         # Update OCR Provider
         selected_provider = self.ocr_provider_combo.currentText()
@@ -638,6 +706,10 @@ class SettingsDialog(QDialog):
         config.max_lookup_length = self.max_lookup_spin.value()
         config.texthooker_enabled = self.texthooker_check.isChecked()
         config.check_for_updates = self.check_updates_check.isChecked()
+        config.run_on_startup = self.run_on_startup_check.isChecked()
+        config.copy_line_hotkey = self.copy_line_edit.text().strip().lower()
+        config.per_game_scan_area = self.per_game_area_check.isChecked()
+        config.pause_outside_games = self.pause_outside_games_check.isChecked()
         config.texthooker_port = self.texthooker_port_spin.value()
         config.frequency_list_path = self.freq_path_edit.text().strip()
         config.anki_enabled = self.anki_enabled_check.isChecked()
@@ -682,6 +754,11 @@ class SettingsDialog(QDialog):
         self.input_loop.reapply_settings()
         self.popup_window.reapply_settings()
         self.tray_icon.reapply_settings()
+        autostart.sync(config.run_on_startup)
+        if getattr(self.tray_icon, 'copy_line', None):
+            self.tray_icon.copy_line.start()
+        if getattr(self.tray_icon, 'game_areas', None):
+            self.tray_icon.game_areas.update_pause()
         if self.ocr_processor.shared_state.text_feed:
             self.ocr_processor.shared_state.text_feed.reapply_settings()
         self.ocr_processor.shared_state.screenshot_trigger_event.set()

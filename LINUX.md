@@ -54,8 +54,11 @@ Known gaps confirmed:
 | Idle CPU | was ~16 % of one T470s core — **not** the screen stream (10 vs 30 fps made no difference) but the 100 Hz polling | popup skips work while hidden; cursor from KWin instead of an X round trip | **done: ~8 %** |
 | Display scaling ≠ 100 %, multi-monitor | untested | test, then map portal pixels ↔ XWayland coordinates | to do (needs a scale change on the test box) |
 | Region selector overlay on Wayland | — | — | **tested**: overlay, drag, offset hover all correct |
+| Focused window (per-game scan areas, pause outside games) | XWayland only sees X11 windows | the same KWin script also reports `workspace.windowActivated` (instance/class like X11, so saved games match on either) | done, untested on hardware |
+| Copy-line hotkey (ctrl+alt+c) | pynput global hotkey | works over X11/XWayland windows (games under Wine); KDE doesn't pass letter keys to X11 apps over native windows — use tray → Copy Line there | done, untested on hardware |
+| Run on startup | — | `~/.config/autostart/meikipop.desktop` (flatpak: `--filesystem=xdg-config/autostart:create`, Exec `flatpak run …`) | done, tested from source on X11 |
 | GNOME | no KWin scripting; would need a GNOME Shell extension or ScreenCast cursor metadata | out of scope for now | — |
-| Packaging | distrobox from source | Flatpak (KDE runtime has GStreamer/PipeWire); needs `--talk-name=org.kde.KWin` for the script | to do |
+| Packaging | distrobox from source | Flatpak (KDE runtime has GStreamer/PipeWire); needs `--talk-name=org.kde.KWin` for the script | done: built in CI, released as a pre-release; install test on 100shiki pending |
 
 ## To do
 1. **Run it on 100shiki** (from source in a distrobox, below) and check:

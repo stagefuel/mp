@@ -254,7 +254,7 @@ class Popup(QWidget):
             self._calculate_content_and_size_char_count(latest_data)
         self._last_latest_data = latest_data
 
-        if self._latest_data and self.input_loop.is_virtual_hotkey_down() and config.is_enabled:
+        if self._latest_data and self.input_loop.is_virtual_hotkey_down() and not self.shared_state.paused:
             self.show_popup()
         else:
             self.hide_popup()

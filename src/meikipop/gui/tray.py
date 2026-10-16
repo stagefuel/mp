@@ -11,7 +11,8 @@ from meikipop.utils.paths import paths
 
 
 class TrayIcon(QSystemTrayIcon):
-    def __init__(self, screen_manager, ocr_processor: OcrProcessor, popup_window, input_loop, lookup, parent=None):
+    def __init__(self, screen_manager, ocr_processor: OcrProcessor, popup_window, input_loop, lookup, game_areas=None,
+                 copy_line=None, parent=None):
         # Resolve icon paths using
         icon_path = paths.get_resource_path('icon.ico')
         icon_inactive_path = paths.get_resource_path('icon.inactive.ico')
@@ -33,6 +34,8 @@ class TrayIcon(QSystemTrayIcon):
         self.popup_window = popup_window
         self.input_loop = input_loop
         self.lookup = lookup
+        self.game_areas = game_areas
+        self.copy_line = copy_line
         self.scan_area_actions = []
         self.settings_dialog = None
 
@@ -102,6 +105,9 @@ class TrayIcon(QSystemTrayIcon):
         self.enable_action.triggered.connect(self.toggle_enabled_state)
         self.activated.connect(self.on_tray_activated)
 
+        if copy_line:
+            self.menu.addAction("Copy Line").triggered.connect(copy_line.copy)
+
         self.menu.addSeparator()
 
         # set up by main.py once the tray exists (gui/updates.py)
@@ -113,6 +119,10 @@ class TrayIcon(QSystemTrayIcon):
 
         self.setContextMenu(self.menu)
         self.setToolTip(APP_NAME)
+
+        if game_areas:
+            game_areas.paused_changed.connect(lambda _paused: self.update_icon())
+            game_areas.area_applied.connect(self.update_scan_area_check)
 
         self.prevent_ghost_icon_on_win()
 
@@ -128,12 +138,12 @@ class TrayIcon(QSystemTrayIcon):
         """Toggles the enabled/paused state of the application."""
         self.enable_action.setChecked(config.is_enabled)
         config.is_enabled = not config.is_enabled
-        if config.is_enabled:
-            # App is active/unpaused
-            self.setIcon(self.icon)
-        else:
-            # App is inactive/paused
-            self.setIcon(self.icon_inactive)
+        self.update_icon()
+
+    def update_icon(self):
+        auto_paused = bool(self.game_areas and self.game_areas.shared_state.auto_paused)
+        self.setIcon(self.icon if config.is_enabled and not auto_paused else self.icon_inactive)
+        self.setToolTip(f"{APP_NAME} (paused outside games)" if config.is_enabled and auto_paused else APP_NAME)
 
     def update_scan_area_check(self):
         current_region = config.scan_region
@@ -159,6 +169,8 @@ class TrayIcon(QSystemTrayIcon):
         selected_id = action.data()
         if selected_id == 'region':
             if self.screen_manager.set_scan_region():
+                if self.game_areas and (config.per_game_scan_area or config.pause_outside_games):
+                    self.game_areas.remember_region(self.screen_manager.monitor)
                 if config.scan_region != 'region':
                     config.scan_region = 'region'
                     config.save()
@@ -170,6 +182,8 @@ class TrayIcon(QSystemTrayIcon):
                 self.screen_manager.set_scan_screen(index)
                 config.scan_region = str(index)
                 config.save()
+            if self.game_areas and (config.per_game_scan_area or config.pause_outside_games):
+                self.game_areas.remember_screen(index)
 
     def _on_ocr_provider_selected(self, action):
         provider_name = action.text()

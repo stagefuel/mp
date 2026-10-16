@@ -17,6 +17,8 @@ finish-args:
   - --own-name=io.github.meikipop.Cursor
   # in-app updates: reinstall the new bundle through the host's flatpak (flatpak-spawn --host)
   - --talk-name=org.freedesktop.Flatpak
+  # run on startup: the login entry goes in the host's ~/.config/autostart
+  - --filesystem=xdg-config/autostart:create
   - "--filesystem=xdg-config/meikipop:rw"
   - "--filesystem=xdg-config/screen_ai:rw"
   - "--filesystem=xdg-data/meikipop:rw"

@@ -9,8 +9,10 @@ from PyQt6.QtCore import Qt, qInstallMessageHandler
 from PyQt6.QtWidgets import QApplication
 
 from meikipop.utils.logger import setup_logging
-from meikipop.config.config import APP_NAME, APP_VERSION
+from meikipop.config.config import APP_NAME, APP_VERSION, config
 from meikipop.dictionary.lookup import Lookup
+from meikipop.gui.copy_line import CopyLine
+from meikipop.gui.game_areas import GameAreas
 from meikipop.gui.input import InputLoop
 from meikipop.gui.popup import Popup
 from meikipop.gui.single_instance import SingleInstance
@@ -20,6 +22,7 @@ from meikipop.ocr.hit_scan import HitScanner
 from meikipop.ocr.ocr import OcrProcessor
 from meikipop.screenshot.screenmanager import ScreenManager
 from meikipop.texthooker.feed import TextFeed
+from meikipop.utils import autostart
 from meikipop.utils.lastest_queue import LatestValueQueue
 
 
@@ -50,12 +53,21 @@ class SharedState:
         # set while the popup is locked in place for mining; pauses ocr and lookups
         self.popup_locked = False
 
+        # set while "pause outside games" is on and no game is focused (see gui/game_areas.py)
+        self.auto_paused = False
+
+    @property
+    def paused(self):
+        return not config.is_enabled or self.auto_paused
+
         # sends new ocr'd lines to texthooker pages over a local websocket (set up in run_gui)
         self.text_feed = None
 
 
-def run_gui():
+def run_gui(background=False):
     setup_logging()
+    if background:
+        autostart.minimize_console()
     shared_state = SharedState()
 
     global original_handler
@@ -85,7 +97,9 @@ def run_gui():
 
     ocr_processor = OcrProcessor(shared_state, screen_manager)
     hit_scanner = HitScanner(shared_state, input_loop, screen_manager)
-    tray_icon = TrayIcon(screen_manager, ocr_processor, popup_window, input_loop, lookup)
+    game_areas = GameAreas(screen_manager, shared_state)
+    copy_line = CopyLine(hit_scanner, fix_text=lookup.fix_reversed_pairs)
+    tray_icon = TrayIcon(screen_manager, ocr_processor, popup_window, input_loop, lookup, game_areas, copy_line)
     # queued, so the other launch's connection is handled before the settings dialog's own event loop starts
     single_instance.activated.connect(tray_icon.show_settings, Qt.ConnectionType.QueuedConnection)
     tray_icon.update_manager = UpdateManager(tray_icon, single_instance)
@@ -93,6 +107,9 @@ def run_gui():
 
     for t in [lookup, hit_scanner, ocr_processor, screen_manager, input_loop]:
         t.start()
+    game_areas.start()
+    copy_line.start()
+    autostart.sync(config.run_on_startup)  # follows the exe if an update renamed it
 
     ready_message = f"""
     --------------------------------------------------
@@ -126,6 +143,8 @@ def main():
         prog="meikipop",
         description="Universal Japanese OCR popup dictionary"
     )
+    parser.add_argument("--background", action="store_true",
+                        help="Start quietly (used when starting at login; on windows the console starts minimized)")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     subparsers.add_parser("build-dict", help="Build the dictionary from source files")
@@ -146,7 +165,8 @@ def main():
                        "meikipop.ocr.providers.glensv2", "meikipop.ocr.providers.owocr",
                        "meikipop.ocr.providers.screenai", "meikipop.texthooker.feed", "meikipop.anki.ankiconnect",
                        "meikipop.gui.kwin_cursor", "meikipop.utils.updater", "meikipop.gui.updates",
-                       "meikipop.gui.single_instance"):
+                       "meikipop.gui.single_instance", "meikipop.gui.game_areas", "meikipop.gui.copy_line",
+                       "meikipop.utils.autostart"):
             try:
                 importlib.import_module(module)
                 print(f"ok      {module}")
@@ -172,7 +192,7 @@ def main():
         from meikipop.scripts.import_yomitan_dict_text import main as import_text_main
         import_text_main([*args.dictionary_files])
     else:
-        run_gui()
+        run_gui(background=args.background)
 
 
 if __name__ == "__main__":

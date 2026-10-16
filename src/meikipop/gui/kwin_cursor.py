@@ -4,7 +4,8 @@
 On Wayland meikipop runs under XWayland, which only sees the pointer while it's over an X11 window; over
 Wayland-native windows (Firefox, Konsole, Okular, ...) the position it reads is frozen. KWin can tell: a tiny
 KWin script, loaded over D-Bus, calls back into meikipop with `workspace.cursorPos` whenever the cursor
-moves (tested: exact positions, ~10-25 ms). The script lives only in the running KWin session and is
+moves (tested: exact positions, ~10-25 ms). It also reports which window is focused (for per-game scan areas;
+XWayland can't see Wayland-native windows either). The script lives only in the running KWin session and is
 unloaded when meikipop exits."""
 import atexit
 import logging
@@ -26,14 +27,25 @@ function send() {
 }
 workspace.cursorPosChanged.connect(send);
 send();
-""" % (BUS_NAME, OBJECT_PATH, INTERFACE)
+// ... and the focused window, as X11 would describe it (instance, class), so saved games match on either
+function activated(w) {
+    if (!w) return;
+    callDBus("%s", "%s", "%s", "Activated", String(w.resourceName || ""), String(w.resourceClass || ""),
+             String(w.caption || ""), w.pid || 0);
+}
+workspace.windowActivated.connect(activated);
+activated(workspace.activeWindow);
+""" % ((BUS_NAME, OBJECT_PATH, INTERFACE) * 2)
 INTROSPECTION = """<node><interface name="%s"><method name="Moved">
-<arg type="i" direction="in"/><arg type="i" direction="in"/></method></interface></node>""" % INTERFACE
+<arg type="i" direction="in"/><arg type="i" direction="in"/></method><method name="Activated">
+<arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="i" direction="in"/>
+</method></interface></node>""" % INTERFACE
 
 
 class KWinCursor:
     def __init__(self):
         self._position = None
+        self._active_window = None  # (instance, class, caption, pid)
         self._lock = threading.Lock()
         self._ready = threading.Event()
         self.active = False
@@ -58,6 +70,11 @@ class KWinCursor:
     def position(self):
         with self._lock:
             return self._position
+
+    @property
+    def active_window(self):
+        with self._lock:
+            return self._active_window
 
     def _run(self):
         from gi.repository import Gio, GLib
@@ -92,6 +109,9 @@ class KWinCursor:
             x, y = params.unpack()
             with self._lock:
                 self._position = (x, y)
+        elif method == 'Activated':
+            with self._lock:
+                self._active_window = params.unpack()
         invocation.return_value(None)
 
     def _scripting(self, method, args, reply_type=None):

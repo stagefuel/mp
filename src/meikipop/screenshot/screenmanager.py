@@ -29,7 +29,9 @@ class ScreenManager(threading.Thread):
         self.last_mouse_pos = None
         self.input_loop = input_loop
         if config.scan_region == "region":
-            self.set_scan_region()
+            # with per-game areas on, the last area is reused instead of asking at every start
+            if not (config.per_game_scan_area and self._restore_last_region()):
+                self.set_scan_region()
         else:
             try:
                 screen_idx = int(config.scan_region)
@@ -42,7 +44,7 @@ class ScreenManager(threading.Thread):
         logger.debug("Screenshot thread started.")
         while self.shared_state.running:
             try:
-                if config.auto_scan_mode and not config.is_enabled:
+                if config.auto_scan_mode and self.shared_state.paused:
                     logger.debug(f"paused while auto mode")
                     self._sleep_and_handle_loop_exit(1)
                     continue
@@ -105,10 +107,23 @@ class ScreenManager(threading.Thread):
             logger.info(f"Set scan area to region {scan_rect}")
             self.monitor = {"top": scan_rect.y(), "left": scan_rect.x(), "width": scan_rect.width(),
                             "height": scan_rect.height()}
+            config.last_scan_area = f"{scan_rect.x()},{scan_rect.y()},{scan_rect.width()},{scan_rect.height()}"
+            config.save()
             return True
         else:
             logger.info("Region selection cancelled.")
             return False
+
+    def _restore_last_region(self):
+        try:
+            left, top, width, height = (int(v) for v in config.last_scan_area.split(','))
+        except ValueError:
+            return False
+        if width <= 0 or height <= 0:
+            return False
+        logger.info(f"Using the last scan area ({left},{top} {width}x{height})")
+        self.monitor = {"top": top, "left": left, "width": width, "height": height}
+        return True
 
     def set_scan_screen(self, screen_index):
         logger.info(f"Set scan area to screen {screen_index}")

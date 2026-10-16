@@ -308,9 +308,9 @@ class InputLoop(threading.Thread):
 
         while self.shared_state.running:
             if self.x11_grabber:
-                self.x11_grabber.want_button = config.is_enabled and self._popup_accepts_lock_toggle()
-                self.x11_grabber.want_escape = config.is_enabled and self.shared_state.popup_locked
-            if not config.is_enabled:
+                self.x11_grabber.want_button = not self.shared_state.paused and self._popup_accepts_lock_toggle()
+                self.x11_grabber.want_escape = not self.shared_state.paused and self.shared_state.popup_locked
+            if self.shared_state.paused:
                 time.sleep(0.1)
                 continue
             try:
