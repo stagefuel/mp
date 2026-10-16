@@ -242,7 +242,7 @@ class InputLoop(threading.Thread):
         self._start_listeners()
 
         while self.shared_state.running:
-            if not config.is_enabled:
+            if self.shared_state.paused:
                 time.sleep(0.1)
                 continue
             try:

@@ -30,6 +30,7 @@ class HitScanner(threading.Thread):
                 if not self.shared_state.running: break
                 logger.debug("HitScanner: Triggered")
                 ocr_result, capture_pos = item if isinstance(item, tuple) else (item, None)
+                self.last_ocr_result = ocr_result
                 if item is not self._last_item:  # a new scan, not a mouse move re-using the last one
                     self._last_item = item
                     self._previous_capture_pos, self._capture_pos = self._capture_pos, capture_pos
@@ -48,6 +49,22 @@ class HitScanner(threading.Thread):
             except:
                 logger.exception("An unexpected error occurred in the hit scan loop. Continuing...")
         logger.debug("HitScanner thread stopped.")
+
+    def text_at_mouse(self):
+        """For "copy line": the ocr'd paragraph under the mouse, or all the text in the scan area if the mouse
+        isn't on any. None before the first scan or when there's no text."""
+        paragraphs = self.last_ocr_result
+        if not paragraphs:
+            return None
+        x, y, w, h = self.screen_manager.get_scan_geometry()
+        if w and h:
+            mouse_x, mouse_y = magpie_manager.transform_raw_to_visual(self.input_loop.get_mouse_pos(), 1)
+            norm_x, norm_y = (mouse_x - x) / w, (mouse_y - y) / h
+            for para in paragraphs:
+                box = para.box
+                if box and abs(norm_x - box.center_x) <= box.width / 2 and abs(norm_y - box.center_y) <= box.height / 2:
+                    return para.full_text
+        return '\n'.join(para.full_text for para in paragraphs if para.full_text) or None
 
     def hit_scan(self, paragraphs: List[Paragraph]):
         if not paragraphs:

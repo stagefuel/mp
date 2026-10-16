@@ -44,6 +44,11 @@ class Config:
             'texthooker_port': 9001,
             'texthooker_stable_scans': 2,
             'check_for_updates': True,
+            'run_on_startup': False,
+            'per_game_scan_area': True,
+            'pause_outside_games': False,
+            'copy_line_hotkey': 'ctrl+alt+c',
+            'last_scan_area': '',
             'validated_dict_ts': -1
         },
         'Theme': {
