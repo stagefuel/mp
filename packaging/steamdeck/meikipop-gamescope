@@ -1,0 +1,40 @@
+#!/bin/bash
+# meikipop-gamescope - run meikipop's lookup popup next to a game in Steam Deck Game Mode.
+#
+# Steam: game -> Properties -> General -> Launch Options:
+#     ~/.local/bin/meikipop-gamescope %command%
+# meikipop starts with the game (in the game's environment, so it sees the game's display)
+# and is stopped when the game exits. Hover Japanese text with the trackpad cursor; with the
+# default auto-scan settings no key is needed, otherwise bind a back button to Shift.
+#
+# Which meikipop runs:
+#   $MEIKIPOP_CMD                          if set (e.g. a dev checkout)
+#   ~/Applications/meikipop/meikipop       the Linux release binary, if present
+#   Flatpak io.github.stagefuel.meikipop   otherwise; gets PipeWire access for this run only
+# Log: ~/.local/state/meikipop/gamescope.log
+set -u
+log="${XDG_STATE_HOME:-$HOME/.local/state}/meikipop/gamescope.log"
+mkdir -p "$(dirname "$log")"
+echo "=== $(date -Is) ${SteamAppId:-?}: $*" >> "$log"
+
+if [ -n "${MEIKIPOP_CMD:-}" ]; then
+    read -ra cmd <<< "$MEIKIPOP_CMD"
+elif [ -x "$HOME/Applications/meikipop/meikipop" ]; then
+    cmd=("$HOME/Applications/meikipop/meikipop")
+elif flatpak info io.github.stagefuel.meikipop >/dev/null 2>&1; then
+    cmd=(flatpak run --filesystem=xdg-run/pipewire-0 --nosocket=wayland io.github.stagefuel.meikipop)
+else
+    echo "no meikipop found - starting the game without it" >> "$log"
+    exec "$@"
+fi
+
+# not the game's LD_PRELOAD (Steam overlay hooks are meant for the game, not for meikipop)
+env -u LD_PRELOAD "${cmd[@]}" --gamescope >> "$log" 2>&1 &
+meikipop=$!
+
+"$@"
+status=$?
+
+kill "$meikipop" 2>/dev/null
+wait "$meikipop" 2>/dev/null
+exit "$status"

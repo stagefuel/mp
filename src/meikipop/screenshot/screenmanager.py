@@ -6,9 +6,14 @@ import time
 from PIL import Image
 
 from meikipop.config.config import config, IS_WAYLAND
+from meikipop.gamescope import IS_GAMESCOPE
 from meikipop.gui.region_selector import RegionSelector
 
-if IS_WAYLAND:
+if IS_GAMESCOPE:
+    from . import gamescope_capture
+
+    mss = gamescope_capture.MSSModuleShim()
+elif IS_WAYLAND:
     from . import wayland_mss_shim
 
     mss = wayland_mss_shim.MSSModuleShim()

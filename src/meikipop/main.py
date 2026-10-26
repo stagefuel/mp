@@ -5,6 +5,10 @@ import signal
 import sys
 import threading
 
+# Steam Deck Game Mode has to be known before any meikipop module is imported (see meikipop/gamescope.py)
+if '--gamescope' in sys.argv:
+    os.environ['MEIKIPOP_GAMESCOPE'] = '1'
+
 from PyQt6.QtCore import Qt, qInstallMessageHandler
 from PyQt6.QtWidgets import QApplication
 
@@ -56,12 +60,56 @@ class SharedState:
         # set while "pause outside games" is on and no game is focused (see gui/game_areas.py)
         self.auto_paused = False
 
+        # sends new ocr'd lines to texthooker pages over a local websocket (set up in run_gui)
+        self.text_feed = None
+
     @property
     def paused(self):
         return not config.is_enabled or self.auto_paused
 
-        # sends new ocr'd lines to texthooker pages over a local websocket (set up in run_gui)
-        self.text_feed = None
+
+def run_gamescope_gui():
+    """Steam Deck Game Mode: lookup popup only, started next to a game by packaging/steamdeck/meikipop-gamescope.
+
+    No tray, settings, updates, single-instance lock, texthooker, mining, copy-line or per-game areas: there's no
+    desktop to show them on, and the game's own window keeps focus. Qt draws on Steam's display (gamescope only
+    shows overlay windows from there); input and the cursor stay on the game's display (DISPLAY).
+    """
+    from meikipop.gamescope import OVERLAY_DISPLAY, gamescope
+    setup_logging()
+    os.environ['QT_QPA_PLATFORM'] = 'xcb'
+    os.environ.pop('WAYLAND_DISPLAY', None)
+    shared_state = SharedState()
+
+    global original_handler
+    original_handler = qInstallMessageHandler(qt_message_handler)
+    app = QApplication([sys.argv[0], '-display', OVERLAY_DISPLAY])
+    app.setQuitOnLastWindowClosed(False)
+    gamescope()  # connect to both displays now, so a problem shows up at start
+
+    input_loop = InputLoop(shared_state)
+    popup_window = Popup(shared_state, input_loop)
+    screen_manager = ScreenManager(shared_state, input_loop)  # whole screen (forced in config)
+    lookup = Lookup(shared_state, popup_window)
+    ocr_processor = OcrProcessor(shared_state, screen_manager)
+    hit_scanner = HitScanner(shared_state, input_loop, screen_manager)
+    for t in [lookup, hit_scanner, ocr_processor, screen_manager, input_loop]:
+        t.start()
+    print(f"{APP_NAME}.{APP_VERSION} running in Steam Deck Game Mode (lookup only).")
+
+    def signal_handler(sig, frame):
+        QApplication.quit()
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    exit_code = app.exec()
+
+    shared_state.running = False
+    shared_state.screenshot_trigger_event.set()
+    shared_state.ocr_queue.put(None)
+    shared_state.hit_scan_queue.trigger()
+    shared_state.lookup_queue.put(None)
+    sys.exit(exit_code)
 
 
 def run_gui(background=False):
@@ -145,6 +193,9 @@ def main():
     )
     parser.add_argument("--background", action="store_true",
                         help="Start quietly (used when starting at login; on windows the console starts minimized)")
+    parser.add_argument("--gamescope", action="store_true",
+                        help="Steam Deck Game Mode: lookup popup only, drawn as a gamescope overlay "
+                             "(use packaging/steamdeck/meikipop-gamescope as a game's launch option)")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     subparsers.add_parser("build-dict", help="Build the dictionary from source files")
@@ -164,7 +215,7 @@ def main():
         for module in ("meikipop.ocr.providers.meikiocr.provider", "meikipop.ocr.providers.meikiocr.vertical",
                        "meikipop.ocr.providers.glensv2", "meikipop.ocr.providers.owocr",
                        "meikipop.ocr.providers.screenai", "meikipop.texthooker.feed", "meikipop.anki.ankiconnect",
-                       "meikipop.gui.kwin_cursor", "meikipop.utils.updater", "meikipop.gui.updates",
+                       "meikipop.gui.kwin_cursor", "meikipop.gamescope", "meikipop.utils.updater", "meikipop.gui.updates",
                        "meikipop.gui.single_instance", "meikipop.gui.game_areas", "meikipop.gui.copy_line",
                        "meikipop.utils.autostart"):
             try:
@@ -191,6 +242,8 @@ def main():
     elif args.command == "import-yomitan-dict-text":
         from meikipop.scripts.import_yomitan_dict_text import main as import_text_main
         import_text_main([*args.dictionary_files])
+    elif args.gamescope:
+        run_gamescope_gui()
     else:
         run_gui(background=args.background)
 

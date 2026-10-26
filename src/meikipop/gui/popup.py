@@ -13,6 +13,7 @@ from meikipop.anki import ankiconnect
 from meikipop.config.config import config, IS_MACOS, IS_WINDOWS
 from meikipop.dictionary import freqlist
 from meikipop.dictionary.lookup import DictionaryEntry, KanjiEntry
+from meikipop.gamescope import IS_GAMESCOPE, gamescope
 from meikipop.gui.kwin_cursor import kwin_cursor
 from meikipop.gui.magpie_manager import magpie_manager
 
@@ -43,7 +44,10 @@ class Popup(QWidget):
     _mine_finished = pyqtSignal(int, str, str)  # entry index, status, message
 
     def __init__(self, shared_state, input_loop):
-        super().__init__()
+        # Game Mode: gamescope stretches overlay windows to the whole screen, so the popup is a child of one
+        # transparent full-screen host on Steam's display instead of a window of its own (see meikipop/gamescope.py)
+        self._overlay_host = self._make_overlay_host() if IS_GAMESCOPE else None
+        super().__init__(self._overlay_host)
         self._latest_data = None
         self._latest_context = None
         self._context = None  # (paragraph text, char index) of the lookup being shown
@@ -87,13 +91,14 @@ class Popup(QWidget):
         self._content_width = 0
         self._shown = None  # (entry count, height) currently displayed
 
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool |
-            Qt.WindowType.WindowDoesNotAcceptFocus |  # clicking it to mine must not take focus from the game
-            Qt.WindowType.X11BypassWindowManagerHint
-        )
+        if not IS_GAMESCOPE:  # Game Mode: a plain child of the overlay host
+            self.setWindowFlags(
+                Qt.WindowType.FramelessWindowHint |
+                Qt.WindowType.WindowStaysOnTopHint |
+                Qt.WindowType.Tool |
+                Qt.WindowType.WindowDoesNotAcceptFocus |  # clicking it to mine must not take focus from the game
+                Qt.WindowType.X11BypassWindowManagerHint
+            )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("background: transparent;")
 
@@ -130,6 +135,24 @@ class Popup(QWidget):
         self.content_layout.addWidget(self.footer_label)
 
         self.hide()
+
+    @staticmethod
+    def _make_overlay_host():
+        host = QWidget()
+        host.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowDoesNotAcceptFocus |
+                            Qt.WindowType.WindowStaysOnTopHint)
+        host.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        host.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        host.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        host.setStyleSheet("background: transparent;")
+        host.setGeometry(QApplication.primaryScreen().geometry())
+        gamescope().prepare_overlay_window(int(host.winId()))  # before mapping: no focus, overlay off
+        host.show()
+        return host
+
+    def _set_overlay_visible(self, visible):
+        if self._overlay_host is not None:
+            gamescope().set_overlay_visible(int(self._overlay_host.winId()), visible)
 
     def _apply_frame_stylesheet(self):
         bg_color = QColor(config.color_background)
@@ -266,6 +289,8 @@ class Popup(QWidget):
     @staticmethod
     def cursor_pos() -> QPoint:
         """Global cursor position; on KDE Wayland from KWin, since XWayland's is frozen over native windows."""
+        if IS_GAMESCOPE:
+            return QPoint(*gamescope().cursor_pos())
         if kwin_cursor.active:
             position = kwin_cursor.position
             if position is not None:
@@ -754,6 +779,7 @@ class Popup(QWidget):
         if not self.is_visible:
             return
         self.hide()
+        self._set_overlay_visible(False)
         self.is_visible = False
         QTimer.singleShot(50, lambda: self._release_lock_safely())  # prevent popup from being screenshotted
         self._restore_focus_on_mac()
@@ -773,6 +799,7 @@ class Popup(QWidget):
 
         self._store_active_window_on_mac()
         self.show()
+        self._set_overlay_visible(True)
         if IS_MACOS:
             self.raise_()
 

@@ -11,6 +11,7 @@ from pynput import keyboard as pynput_keyboard
 
 from meikipop.config.config import config, IS_LINUX, IS_MACOS, IS_WINDOWS
 from meikipop.gui.kwin_cursor import kwin_cursor
+from meikipop.gamescope import IS_GAMESCOPE, gamescope
 
 if IS_LINUX:
     from Xlib import display as xlib_display
@@ -218,7 +219,8 @@ class InputLoop(threading.Thread):
         self._suppressing_escape = False
 
         self.x11_grabber = None
-        if IS_LINUX:
+        # Game Mode is lookup-only: no lock/mining, and never grab buttons on the game's display
+        if IS_LINUX and not IS_GAMESCOPE:
             try:
                 self.x11_grabber = X11InputGrabber()
             except Exception as e:
@@ -229,6 +231,8 @@ class InputLoop(threading.Thread):
 
     # --- popup locking (middle click) and closing (esc / click outside) ---
     def _start_listeners(self):
+        if IS_GAMESCOPE:
+            return  # nothing to lock, so no click/Esc listeners on the game's display
         mouse_kwargs, key_kwargs = {}, {}
         if IS_WINDOWS:
             # on windows the hooks can swallow the input, so the game under the popup doesn't also react to it
@@ -383,6 +387,9 @@ class InputLoop(threading.Thread):
 
     @staticmethod
     def get_mouse_pos():
+        # Steam Deck Game Mode: the game's pointer, mapped to where gamescope shows it
+        if IS_GAMESCOPE:
+            return gamescope().cursor_pos()
         # KDE Wayland: XWayland can't see the pointer over Wayland-native windows, KWin can
         if kwin_cursor.active:
             position = kwin_cursor.position

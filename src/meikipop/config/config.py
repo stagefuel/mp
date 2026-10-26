@@ -17,6 +17,11 @@ IS_MACOS = sys.platform.startswith('darwin')
 # todo should we use this instead?: IS_WAYLAND = IS_LINUX and bool(os.environ.get('WAYLAND_DISPLAY'))
 IS_WAYLAND = IS_LINUX and os.environ.get('XDG_SESSION_TYPE', '').lower() == 'wayland'
 
+# Steam Deck Game Mode (see meikipop/gamescope.py): plain X11 on the game's display
+from meikipop.gamescope import IS_GAMESCOPE
+if IS_GAMESCOPE:
+    IS_WAYLAND = False
+
 # Force xwayland so windows can pop up in arbitary locations
 if IS_WAYLAND:
     os.environ['QT_QPA_PLATFORM'] = 'xcb'
@@ -125,7 +130,23 @@ class Config:
         else:
             logger.info(f"No configuration found at '{CONFIG_PATH}'. A new one will be created with default values.")
 
+    # Game Mode is lookup-only and shares config.ini with the desktop meikipop, so these
+    # are forced in memory and nothing is ever written back.
+    _GAMESCOPE_OVERRIDES = {
+        'scan_region': '1', 'per_game_scan_area': False, 'pause_outside_games': False,
+        'texthooker_enabled': False, 'anki_enabled': False, 'check_for_updates': False,
+        'run_on_startup': False, 'lock_on_hotkey_double_tap': False, 'magpie_compatibility': False,
+    }
+
+    def apply_gamescope_overrides(self):
+        for key, value in self._GAMESCOPE_OVERRIDES.items():
+            setattr(self, key, value)
+        logger.info("Game Mode: lookup-only settings applied (not saved)")
+
     def save(self):
+        if IS_GAMESCOPE:
+            logger.info("Game Mode: settings are not saved")
+            return
         parser = configparser.ConfigParser()
         for section, settings in self._SCHEMA.items():
             parser.add_section(section)
@@ -139,3 +160,5 @@ class Config:
 
 
 config = Config()
+if IS_GAMESCOPE:
+    config.apply_gamescope_overrides()
