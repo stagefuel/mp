@@ -93,10 +93,9 @@ pip install -e .
 meikipop
 ```
 
-## Steam Deck Game Mode (branch `gamescope`, Gitea only, 2026-10-25)
+## Steam Deck Game Mode (branch `gamescope`, 2026-10-25)
 
 Lookup-only meikipop over games in Game Mode, plus a Decky plugin to control it (`decky/`).
-**Not pushed to GitHub** (user decision).
 
 **How it works** (`src/meikipop/gamescope.py`):
 - gamescope runs two rootless XWaylands: `:0` Steam's UI, `:1` games. meikipop starts with the
