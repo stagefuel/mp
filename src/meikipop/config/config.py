@@ -30,6 +30,7 @@ if IS_WAYLAND:
 DEFAULT_FONT = 'Segoe UI' if IS_WINDOWS else 'Hiragino Sans' if IS_MACOS else 'Noto Sans CJK JP'
 
 CONFIG_PATH = paths.config_path
+GAMEMODE_PATH = os.path.join(os.path.dirname(CONFIG_PATH), 'gamemode.ini')
 DICT_PATH = paths.dictionary_path
 
 class Config:
@@ -105,23 +106,23 @@ class Config:
             cls._instance._load()
         return cls._instance
 
+    @staticmethod
+    def _parse(parser, section, key, default):
+        if isinstance(default, bool):
+            return parser.getboolean(section, key)
+        if isinstance(default, int):
+            return parser.getint(section, key)
+        if isinstance(default, float):
+            return parser.getfloat(section, key)
+        return parser.get(section, key)
+
     def _load(self):
         parser = configparser.ConfigParser()
         found = parser.read(CONFIG_PATH, encoding='utf-8')
 
         for section, settings in self._SCHEMA.items():
             for key, default in settings.items():
-                if parser.has_option(section, key):
-                    if isinstance(default, bool):
-                        val = parser.getboolean(section, key)
-                    elif isinstance(default, int):
-                        val = parser.getint(section, key)
-                    elif isinstance(default, float):
-                        val = parser.getfloat(section, key)
-                    else:
-                        val = parser.get(section, key)
-                else:
-                    val = default
+                val = self._parse(parser, section, key, default) if parser.has_option(section, key) else default
                 setattr(self, key, val)
 
         self.is_enabled = True
@@ -142,6 +143,33 @@ class Config:
         for key, value in self._GAMESCOPE_OVERRIDES.items():
             setattr(self, key, value)
         logger.info("Game Mode: lookup-only settings applied (not saved)")
+        self.load_gamemode_file()
+
+    # Game Mode's own settings, written by the meikipop Decky plugin: popup look/size only, layered over
+    # config.ini so the desktop meikipop is never affected. [GameMode] enabled = false pauses lookups.
+    GAMEMODE_KEYS = ('font_size_definitions', 'font_size_header', 'popup_max_width_percent',
+                     'popup_max_height_percent', 'background_opacity', 'compact_mode', 'popup_position_mode',
+                     'popup_layout', 'show_kanji', 'show_examples', 'show_frequency', 'show_deconjugation',
+                     'theme_name', 'font_family', 'auto_scan_mode_lookups_without_hotkey', 'hotkey')
+
+    def load_gamemode_file(self):
+        """(Re)read gamemode.ini; returns its mtime, or 0 if there is none."""
+        try:
+            mtime = os.path.getmtime(GAMEMODE_PATH)
+        except OSError:
+            return 0
+        parser = configparser.ConfigParser()
+        try:
+            parser.read(GAMEMODE_PATH, encoding='utf-8')
+            for section, settings in self._SCHEMA.items():
+                for key, default in settings.items():
+                    if key in self.GAMEMODE_KEYS and parser.has_option(section, key):
+                        setattr(self, key, self._parse(parser, section, key, default))
+            self.is_enabled = parser.getboolean('GameMode', 'enabled', fallback=True)
+            logger.info(f"Game Mode: settings from {GAMEMODE_PATH} (enabled={self.is_enabled})")
+        except (configparser.Error, ValueError) as e:
+            logger.warning(f"Game Mode: ignoring a bad {GAMEMODE_PATH}: {e}")
+        return mtime
 
     def save(self):
         if IS_GAMESCOPE:

@@ -2,6 +2,7 @@
 import html
 import logging
 import threading
+import time
 from typing import List, Optional
 
 from PyQt6.QtCore import QTimer, QPoint, QSize, QEvent, pyqtSignal
@@ -72,6 +73,8 @@ class Popup(QWidget):
         self._mine_finished.connect(self._on_mine_finished)
 
         self.is_visible = False
+        self._preview_until = 0.0  # Game Mode plugin "Preview": show a sample lookup until then
+        self._preview_data = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.process_latest_data_loop)
         self.timer.start(10)
@@ -277,14 +280,25 @@ class Popup(QWidget):
             self._calculate_content_and_size_char_count(latest_data)
         self._last_latest_data = latest_data
 
-        if self._latest_data and self.input_loop.is_virtual_hotkey_down() and not self.shared_state.paused:
+        previewing = self._preview_until > 0 and time.monotonic() < self._preview_until
+        if self._preview_until and not previewing:  # preview over: drop the sample entry
+            self._preview_until = 0.0
+            if self._latest_data is self._preview_data:
+                self.set_latest_data(None)
+
+        if previewing or (self._latest_data and self.input_loop.is_virtual_hotkey_down()
+                          and not self.shared_state.paused):
             self.show_popup()
         else:
             self.hide_popup()
 
         if self.is_visible:  # nothing to place while hidden (this runs every 10 ms)
-            mouse_pos = self.cursor_pos()
-            self.move_to(mouse_pos.x(), mouse_pos.y())
+            if previewing:  # centred near the top, where the Quick Access menu doesn't cover it
+                geo = (QApplication.primaryScreen()).geometry()
+                self.move((geo.width() - self.width()) // 2, geo.height() // 8)
+            else:
+                mouse_pos = self.cursor_pos()
+                self.move_to(mouse_pos.x(), mouse_pos.y())
 
     @staticmethod
     def cursor_pos() -> QPoint:
@@ -773,6 +787,12 @@ class Popup(QWidget):
             self.display_label.setText(self._join_entries(len(self._entry_htmls)))
             self.scroll_area.verticalScrollBar().setValue(scroll)
         self._set_footer(message, MINED_COLORS.get(status))
+
+    def show_preview(self, data, context, seconds):
+        """Game Mode: show a sample lookup for a few seconds, even while lookups are paused."""
+        self._preview_data = data
+        self.set_latest_data(data, context)
+        self._preview_until = time.monotonic() + seconds
 
     def hide_popup(self):
         # logger.debug(f"hide_popup triggered while visibility:{self.is_visible}")

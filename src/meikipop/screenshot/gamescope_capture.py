@@ -27,8 +27,7 @@ logger = logging.getLogger(__name__)
 PIPELINE = (
     'pipewiresrc target-object=gamescope always-copy=true ! '
     'videoconvert ! '
-    'videorate drop-only=true ! '
-    'video/x-raw,format=BGRx,max-framerate=10/1 ! '
+    'video/x-raw,format=BGRx ! '  # no videorate: gamescope's buffers carry no timestamps (it asserts)
     'appsink name=sink max-buffers=1 drop=true emit-signals=true enable-last-sample=false qos=false sync=false'
 )
 

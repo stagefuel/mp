@@ -28,6 +28,7 @@ import time
 logger = logging.getLogger(__name__)
 
 ENV_FLAG = 'MEIKIPOP_GAMESCOPE'
+STEAM_UI_APPID = 769
 IS_GAMESCOPE = os.environ.get(ENV_FLAG) == '1'
 GAME_DISPLAY = os.environ.get('DISPLAY', ':1')
 OVERLAY_DISPLAY = os.environ.get('MEIKIPOP_OVERLAY_DISPLAY', ':0')
@@ -91,6 +92,16 @@ class Gamescope:
         with self._lock:
             p = self._game.screen().root.query_pointer()
             return self.game_to_overlay(p.root_x, p.root_y)
+
+    def focused_app(self):
+        """Steam app id gamescope is showing (769 = Steam's own UI), or None."""
+        with self._lock:
+            try:
+                a = self._overlay.intern_atom('GAMESCOPE_FOCUSED_APP')
+                prop = self._overlay.screen().root.get_full_property(a, self._X.AnyPropertyType)
+                return int(prop.value[0]) if prop and prop.value else None
+            except Exception:
+                return None
 
     # --- overlay window -------------------------------------------------------------
     def prepare_overlay_window(self, window_id):
