@@ -16,6 +16,15 @@ HOME = Path(decky.DECKY_USER_HOME)
 CONFIG_DIR = HOME / ".config" / "meikipop"
 GAMEMODE_INI = CONFIG_DIR / "gamemode.ini"
 PREVIEW = CONFIG_DIR / "gamemode-preview"
+# the Flatpak keeps its config in its own sandbox dir; settings and preview go to both
+FLATPAK_CONFIG_DIR = HOME / ".var" / "app" / "io.github.stagefuel.meikipop" / "config" / "meikipop"
+
+
+def _config_dirs():
+    dirs = [CONFIG_DIR]
+    if FLATPAK_CONFIG_DIR.parent.parent.is_dir():  # the Flatpak has been run at least once
+        dirs.append(FLATPAK_CONFIG_DIR)
+    return dirs
 WRAPPER = HOME / ".local" / "bin" / "meikipop-gamescope"
 
 # key -> (section, default, type); defaults match meikipop's own
@@ -94,21 +103,24 @@ class Plugin:
         if not parser.has_section(section):
             parser.add_section(section)
         parser.set(section, key, str(bool(value)).lower() if kind is bool else str(int(value)))
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = GAMEMODE_INI.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            parser.write(f)
-        os.replace(tmp, GAMEMODE_INI)  # meikipop never sees a half-written file
+        for d in _config_dirs():
+            d.mkdir(parents=True, exist_ok=True)
+            tmp = d / "gamemode.ini.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                parser.write(f)
+            os.replace(tmp, d / "gamemode.ini")  # meikipop never sees a half-written file
         return True
 
     async def reset_settings(self):
-        GAMEMODE_INI.unlink(missing_ok=True)
+        for d in _config_dirs():
+            (d / "gamemode.ini").unlink(missing_ok=True)
         return True
 
     async def preview(self):
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        PREVIEW.touch()
-        os.utime(PREVIEW)
+        for d in _config_dirs():
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "gamemode-preview").touch()
+            os.utime(d / "gamemode-preview")
         return True
 
     async def status(self):

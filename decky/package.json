@@ -1,6 +1,6 @@
 {
   "name": "meikipop-decky",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Quick Access settings for meikipop's Steam Deck Game Mode lookup popup",
   "type": "module",
   "scripts": {
