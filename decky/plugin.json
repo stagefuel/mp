@@ -1,0 +1,11 @@
+{
+  "name": "meikipop",
+  "author": "stagefuel",
+  "api_version": 1,
+  "flags": [],
+  "publish": {
+    "tags": ["japanese", "dictionary", "ocr", "visual-novel"],
+    "description": "Settings for meikipop's Game Mode lookup popup, and turning it on per game.",
+    "image": ""
+  }
+}

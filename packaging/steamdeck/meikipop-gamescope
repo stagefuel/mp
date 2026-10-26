@@ -8,7 +8,8 @@
 # default auto-scan settings no key is needed, otherwise bind a back button to Shift.
 #
 # Which meikipop runs:
-#   $MEIKIPOP_CMD                          if set (e.g. a dev checkout)
+#   $MEIKIPOP_CMD                          if set
+#   ~/.config/meikipop/gamescope.cmd       one line, if present (e.g. a dev checkout in a distrobox)
 #   ~/Applications/meikipop/meikipop       the Linux release binary, if present
 #   Flatpak io.github.stagefuel.meikipop   otherwise; gets PipeWire access for this run only
 # Log: ~/.local/state/meikipop/gamescope.log
@@ -17,8 +18,11 @@ log="${XDG_STATE_HOME:-$HOME/.local/state}/meikipop/gamescope.log"
 mkdir -p "$(dirname "$log")"
 echo "=== $(date -Is) ${SteamAppId:-?}: $*" >> "$log"
 
+custom="${XDG_CONFIG_HOME:-$HOME/.config}/meikipop/gamescope.cmd"
 if [ -n "${MEIKIPOP_CMD:-}" ]; then
     read -ra cmd <<< "$MEIKIPOP_CMD"
+elif [ -s "$custom" ]; then
+    read -ra cmd < "$custom"
 elif [ -x "$HOME/Applications/meikipop/meikipop" ]; then
     cmd=("$HOME/Applications/meikipop/meikipop")
 elif flatpak info io.github.stagefuel.meikipop >/dev/null 2>&1; then
@@ -28,8 +32,8 @@ else
     exec "$@"
 fi
 
-# not the game's LD_PRELOAD (Steam overlay hooks are meant for the game, not for meikipop)
-env -u LD_PRELOAD "${cmd[@]}" --gamescope >> "$log" 2>&1 &
+# not the game's LD_PRELOAD / LD_LIBRARY_PATH (Steam overlay hooks and runtime libraries are for the game)
+env -u LD_PRELOAD -u LD_LIBRARY_PATH "${cmd[@]}" --gamescope >> "$log" 2>&1 &
 meikipop=$!
 
 "$@"
