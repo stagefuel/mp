@@ -92,3 +92,46 @@ python3 -m venv --system-site-packages .venv && . .venv/bin/activate   # system 
 pip install -e .
 meikipop
 ```
+
+## Steam Deck Game Mode (branch `gamescope`, Gitea only, 2026-10-25)
+
+Lookup-only meikipop over games in Game Mode, plus a Decky plugin to control it (`decky/`).
+**Not pushed to GitHub** (user decision).
+
+**How it works** (`src/meikipop/gamescope.py`):
+- gamescope runs two rootless XWaylands: `:0` Steam's UI, `:1` games. meikipop starts with the
+  game's environment (DISPLAY=:1) and Qt is pointed at `:0` (`-display :0`).
+- **capture** (`screenshot/gamescope_capture.py`): `pipewiresrc target-object=gamescope` — gamescope's
+  own PipeWire node, no portal (none exists in Game Mode). No `videorate` (gamescope buffers have no
+  PTS; it asserts). Overlays are not in the stream, so the popup is never OCR'd. Frames are scaled
+  to `:0`'s size ("overlay space").
+- **popup**: gamescope only draws windows from `:0` that carry `GAMESCOPE_EXTERNAL_OVERLAY`, and
+  stretches them to the whole screen (like mangoapp). So the Popup is a child of one transparent
+  full-screen host with `GAMESCOPE_NO_FOCUS=1`; the overlay atom is 1 only while a lookup shows.
+  Tested: a window on `:1` with the atom is NOT shown; a small window on `:0` is shown full-screen.
+- **cursor**: `query_pointer` on `:1`, mapped like gamescope fits the focused window
+  (`GAMESCOPE_FOCUSED_WINDOW` on `:0`): scale = min(ow/gw, oh/gh), centred.
+- Lookup-only: no tray/settings/updates/single-instance/mining/texthooker/copy-line, no X grabs on
+  the game's display, config never saved. Forced: scan whole screen.
+- `gui/gamemode.py` (1 s tick): reloads `gamemode.ini` live; pauses while `GAMESCOPE_FOCUSED_APP` is
+  769 (Steam UI) or another game; Preview; **quits 3 s after its app leaves
+  `GAMESCOPE_FOCUSABLE_APPS`** (gives up after 3 min if never seen). One instance per game via the X
+  selection `MEIKIPOP_GAMESCOPE_<appid>` on `:0`. Both X-based because a Flatpak can't see host
+  processes.
+
+**Running it**: `packaging/steamdeck/meikipop-gamescope` → `~/.local/bin/`, used as a launch option
+`/home/deck/.local/bin/meikipop-gamescope %command%` (the plugin manages that). Command resolution:
+`$MEIKIPOP_CMD`, `~/.config/meikipop/gamescope.cmd`, `~/Applications/meikipop/meikipop`, then the
+Flatpak (`--filesystem=xdg-run/pipewire-0 --nosocket=wayland`). meikipop gets `--appid`, and runs
+without the game's LD_PRELOAD/LD_LIBRARY_PATH. Log: `~/.local/state/meikipop/gamescope.log`.
+
+**Dev setup on the Deck (current)**: distrobox `meikipop` (fedora-toolbox:42; python3-gobject,
+gstreamer1 + pipewire-gstreamer, python3-evdev, Noto CJK) + `~/meikipop-dev/.venv`
+(`--system-site-packages`, `pip install -e . onnxruntime`); `gamescope.cmd` =
+`distrobox enter meikipop -- /home/deck/meikipop-dev/.venv/bin/meikipop`. Start-up ~15 s.
+Gotchas: a killed `distrobox enter` does NOT kill the process inside (hence the self-quit);
+run long setup jobs with `systemd-run --user`, not nohup over SSH.
+
+**Settings**: `~/.config/meikipop/gamemode.ini` over `config.ini` — keys in `Config.GAMEMODE_KEYS`
+plus `[GameMode] enabled`. OCR on the Deck CPU: ~0.16 s median per scan.
+
