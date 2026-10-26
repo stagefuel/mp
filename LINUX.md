@@ -95,6 +95,8 @@ meikipop
 
 ## Steam Deck Game Mode (branch `gamescope`, 2026-10-25)
 
+**Setup guide: [STEAMDECK.md](STEAMDECK.md).** Below are implementation notes.
+
 Lookup-only meikipop over games in Game Mode, plus a Decky plugin to control it (`decky/`).
 
 **How it works** (`src/meikipop/gamescope.py`):

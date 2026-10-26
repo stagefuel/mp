@@ -1,7 +1,8 @@
 # meikipop Decky plugin
 
 Quick Access panel for meikipop's **Steam Deck Game Mode** lookup popup (`meikipop --gamescope`,
-see LINUX.md → "Steam Deck Game Mode"). Not in the Decky store; branch `gamescope`.
+see LINUX.md → "Steam Deck Game Mode"). Not in the Decky store: the source is here on branch `gamescope`, and it's built and installed by hand.
+**Full setup guide: [../STEAMDECK.md](../STEAMDECK.md).**
 
 ## What it does
 - **On**: pause/resume lookups live (`[GameMode] enabled` in `gamemode.ini`).
