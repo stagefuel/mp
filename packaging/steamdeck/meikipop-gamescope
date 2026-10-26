@@ -13,10 +13,20 @@
 #   ~/Applications/meikipop/meikipop       the Linux release binary, if present
 #   Flatpak io.github.stagefuel.meikipop   otherwise; gets PipeWire access for this run only
 # Log: ~/.local/state/meikipop/gamescope.log
+#
+#     meikipop-gamescope --attach APPID
+# runs meikipop next to an already running game instead, until that game exits (the Decky plugin
+# uses this when a game is switched on while it's running). Run it with the game's environment.
 set -u
 log="${XDG_STATE_HOME:-$HOME/.local/state}/meikipop/gamescope.log"
 mkdir -p "$(dirname "$log")"
-echo "=== $(date -Is) ${SteamAppId:-?}: $*" >> "$log"
+attach=""
+if [ "${1:-}" = "--attach" ]; then
+    attach=1
+    export SteamAppId="${2:?usage: meikipop-gamescope --attach APPID}"
+    set --
+fi
+echo "=== $(date -Is) ${SteamAppId:-?}: ${attach:+attach}$*" >> "$log"
 
 custom="${XDG_CONFIG_HOME:-$HOME/.config}/meikipop/gamescope.cmd"
 if [ -n "${MEIKIPOP_CMD:-}" ]; then
@@ -29,15 +39,23 @@ elif flatpak info io.github.stagefuel.meikipop >/dev/null 2>&1; then
     cmd=(flatpak run --filesystem=xdg-run/pipewire-0 --nosocket=wayland io.github.stagefuel.meikipop)
 else
     echo "no meikipop found - starting the game without it" >> "$log"
+    [ -n "$attach" ] && exit 1
     exec "$@"
 fi
 
 # not the game's LD_PRELOAD / LD_LIBRARY_PATH (Steam overlay hooks and runtime libraries are for the game)
-env -u LD_PRELOAD -u LD_LIBRARY_PATH "${cmd[@]}" --gamescope >> "$log" 2>&1 &
+env -u LD_PRELOAD -u LD_LIBRARY_PATH "${cmd[@]}" --gamescope ${SteamAppId:+--appid "$SteamAppId"} >> "$log" 2>&1 &
 meikipop=$!
 
-"$@"
-status=$?
+if [ -n "$attach" ]; then  # follow the game's reaper (the pattern can't match this script's own argv)
+    while kill -0 "$meikipop" 2>/dev/null && pgrep -f "reaper SteamLaunch AppId=$SteamAppId( |\$)" >/dev/null; do
+        sleep 2
+    done
+    status=0
+else
+    "$@"
+    status=$?
+fi
 
 kill "$meikipop" 2>/dev/null
 wait "$meikipop" 2>/dev/null

@@ -3,7 +3,6 @@
 // meikipop re-reads it every second, so every change shows on the next lookup.
 import {
   ButtonItem,
-  DropdownItem,
   PanelSection,
   PanelSectionRow,
   Router,
@@ -32,6 +31,9 @@ const setSetting = callable<[key: string, value: number | boolean], boolean>("se
 const resetSettings = callable<[], boolean>("reset_settings");
 const preview = callable<[], boolean>("preview");
 const getStatus = callable<[], Status>("status");
+const isRunning = callable<[appid: number], { game: boolean; meikipop: boolean }>("running");
+const startFor = callable<[appid: number], boolean>("start_for");
+const stopFor = callable<[appid: number], boolean>("stop_for");
 
 declare const SteamClient: any;
 declare const appDetailsStore: any;
@@ -81,8 +83,9 @@ function recentGames(): { appid: number; name: string }[] {
     .map((a: any) => ({ appid: Number(a.appid), name: a.display_name }));
 }
 
-// on/off for one game: only adds or removes the wrapper, never touches the rest of its launch options
-function GameToggle({ appid, name, status }: { appid: number; name: string; status: Status }) {
+// on/off for one game: only adds or removes the wrapper, never touches the rest of its launch options.
+// If the game is running, meikipop is also started/stopped right away instead of at its next launch.
+function GameToggle({ appid, name, status, running }: { appid: number; name: string; status: Status; running?: boolean }) {
   const [on, setOn] = useState<boolean | null>(null);
   useEffect(() => {
     setOn(null);
@@ -91,8 +94,8 @@ function GameToggle({ appid, name, status }: { appid: number; name: string; stat
   const usable = status.wrapper_installed && !!status.meikipop;
   return (
     <ToggleField
-      label={name}
-      description={!usable ? "meikipop isn't installed" : on === null ? "..." : "Takes effect next launch"}
+      label={running ? `▶ ${name}` : name}
+      description={!usable ? "meikipop isn't installed" : on === null ? "..." : running ? "Running" : undefined}
       disabled={!usable || on === null}
       checked={!!on}
       onChange={async (v) => {
@@ -100,7 +103,9 @@ function GameToggle({ appid, name, status }: { appid: number; name: string; stat
         const next = v ? withWrapper(cur, status.wrapper) : withoutWrapper(cur, status.wrapper);
         setLaunchOptions(appid, next);
         setOn(v);
-        toaster.toast({ title: "meikipop", body: `${v ? "On" : "Off"} for ${name}` });
+        let now = false;
+        if ((await isRunning(appid)).game) now = v ? await startFor(appid) : await stopFor(appid);
+        toaster.toast({ title: "meikipop", body: `${v ? "On" : "Off"} for ${name}${now ? (v ? " - starting now" : " - stopped") : ""}` });
       }}
     />
   );
@@ -111,8 +116,9 @@ function Content() {
   const [s, setS] = useState<Settings | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const running = Router.MainRunningApp;
-  const games = recentGames();
-  const [picked, setPicked] = useState<number | null>(null);
+  const runningId = running ? Number(running.appid) : null;
+  const games = recentGames().filter((g) => g.appid !== runningId);
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     getSettings().then(setS);
@@ -142,23 +148,17 @@ function Content() {
       <PanelSection title="Use with">
         {running && (
           <PanelSectionRow>
-            <GameToggle appid={Number(running.appid)} name={running.display_name} status={status} />
+            <GameToggle appid={runningId!} name={running.display_name} status={status} running />
           </PanelSectionRow>
         )}
-        <PanelSectionRow>
-          <DropdownItem
-            label="Other game"
-            menuLabel="Recently played"
-            strDefaultLabel="Pick a game"
-            rgOptions={games.map((g) => ({ data: g.appid, label: g.name }))}
-            selectedOption={picked}
-            onChange={(o) => setPicked(o.data)}
-          />
-        </PanelSectionRow>
-        {picked !== null && picked !== Number(running?.appid) && (
+        {games.slice(0, showAll ? games.length : 6).map((g) => (
+          <PanelSectionRow key={g.appid}>
+            <GameToggle appid={g.appid} name={g.name} status={status} />
+          </PanelSectionRow>
+        ))}
+        {!showAll && games.length > 6 && (
           <PanelSectionRow>
-            <GameToggle appid={picked} name={games.find((g) => g.appid === picked)?.name ?? String(picked)}
-              status={status} />
+            <ButtonItem layout="below" onClick={() => setShowAll(true)}>Show more</ButtonItem>
           </PanelSectionRow>
         )}
       </PanelSection>

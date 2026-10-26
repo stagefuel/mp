@@ -8,6 +8,8 @@ import threading
 # Steam Deck Game Mode has to be known before any meikipop module is imported (see meikipop/gamescope.py)
 if '--gamescope' in sys.argv:
     os.environ['MEIKIPOP_GAMESCOPE'] = '1'
+    if '--appid' in sys.argv[:-1]:  # which game this instance is for (also lets the Decky plugin find it)
+        os.environ['MEIKIPOP_APPID'] = sys.argv[sys.argv.index('--appid') + 1]
 
 from PyQt6.QtCore import Qt, qInstallMessageHandler
 from PyQt6.QtWidgets import QApplication
@@ -199,6 +201,7 @@ def main():
     parser.add_argument("--gamescope", action="store_true",
                         help="Steam Deck Game Mode: lookup popup only, drawn as a gamescope overlay "
                              "(use packaging/steamdeck/meikipop-gamescope as a game's launch option)")
+    parser.add_argument("--appid", type=int, help="Game Mode: the Steam app id of the game it runs next to")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     subparsers.add_parser("build-dict", help="Build the dictionary from source files")

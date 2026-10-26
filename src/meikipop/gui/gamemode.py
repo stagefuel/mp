@@ -37,7 +37,7 @@ class GameModeController:
 
     @staticmethod
     def _env_appid():
-        for name in ('SteamAppId', 'SteamGameId', 'STEAM_COMPAT_APP_ID'):
+        for name in ('MEIKIPOP_APPID', 'SteamAppId', 'SteamGameId', 'STEAM_COMPAT_APP_ID'):
             try:
                 value = int(os.environ.get(name, '0'))
             except ValueError:
