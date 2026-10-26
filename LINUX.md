@@ -1,9 +1,9 @@
 # Linux support (work in progress, branch `linux`)
 
 Target: **KDE Plasma 6 on Wayland** (Aurora / Bazzite / Fedora KDE), games under Wine via XWayland.
-Test machine: **100shiki** (ThinkPad T470s, Aurora 44, KWin 6.7, 1920x1080 @ 100 %).
+Test machine: **the test laptop** (ThinkPad T470s, Aurora 44, KWin 6.7, 1920x1080 @ 100 %).
 
-## Tested on 100shiki, 2026-10-10 (from source in a distrobox, driven remotely)
+## Tested on the test laptop, 2026-10-10 (from source in a distrobox, driven remotely)
 Works on Wayland, over an XWayland window (Firefox run with `--nosocket=wayland --socket=x11`):
 - KDE's "Share screen with" prompt appears on first start; with *Allow restoring* ticked it isn't asked again,
   also after restarting meikipop. Tray shows KDE's recording indicator while meikipop runs.
@@ -43,7 +43,7 @@ Known gaps confirmed:
 - [x] Release workflow also builds a single-file **Linux x86_64 binary** (Ubuntu 22.04, self-tested under
       Xvfb). It's for X11 sessions: Wayland capture needs PyGObject + GStreamer, which don't bundle well.
 
-## Wayland investigation (100shiki, 2026-10-10) — what "fully functional" needs on KDE
+## Wayland investigation (the test laptop, 2026-10-10) — what "fully functional" needs on KDE
 | Piece | Today | Fix (KDE Plasma 6) | Status |
 |---|---|---|---|
 | Cursor position over Wayland-native windows | frozen (XWayland only sees X11 windows) | **KWin script** (`gui/kwin_cursor.py`, loaded over D-Bus at start on KDE Wayland, unloaded on exit) | **done + tested**: popups over Konsole at the right spot, ~10–25 ms |
@@ -58,10 +58,10 @@ Known gaps confirmed:
 | Copy-line hotkey (ctrl+alt+c) | pynput global hotkey | works over X11/XWayland windows (games under Wine); KDE doesn't pass letter keys to X11 apps over native windows — use tray → Copy Line there | done, untested on hardware |
 | Run on startup | — | `~/.config/autostart/meikipop.desktop` (flatpak: `--filesystem=xdg-config/autostart:create`, Exec `flatpak run …`) | done, tested from source on X11 |
 | GNOME | no KWin scripting; would need a GNOME Shell extension or ScreenCast cursor metadata | out of scope for now | — |
-| Packaging | distrobox from source | Flatpak (KDE runtime has GStreamer/PipeWire); needs `--talk-name=org.kde.KWin` for the script | done: built in CI, released as a pre-release; install test on 100shiki pending |
+| Packaging | distrobox from source | Flatpak (KDE runtime has GStreamer/PipeWire); needs `--talk-name=org.kde.KWin` for the script | done: built in CI, released as a pre-release; install test on the test laptop pending |
 
 ## To do
-1. **Run it on 100shiki** (from source in a distrobox, below) and check:
+1. **Run it on the test laptop** (from source in a distrobox, below) and check:
    - [ ] KDE's screen-capture prompt appears once and is remembered
    - [ ] hover lookups over a Wine/XWayland window; popup lands under the cursor
    - [ ] display scaling (125/150 %) and multi-monitor: capture pixels vs XWayland coordinates may not match
