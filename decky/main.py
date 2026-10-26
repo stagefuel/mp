@@ -142,8 +142,9 @@ class Plugin:
         except OSError:
             env = {"DISPLAY": ":1", "XDG_RUNTIME_DIR": "/run/user/1000", "HOME": str(HOME),
                    "PATH": "/usr/local/bin:/usr/bin:/bin"}
-        subprocess.Popen([str(WRAPPER), "--attach", str(appid)], env=env, start_new_session=True,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # setsid -f: the wrapper is re-parented away from Decky at once (no zombie, survives plugin reloads)
+        subprocess.run(["setsid", "-f", str(WRAPPER), "--attach", str(appid)], env=env, timeout=10,
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         decky.logger.info(f"started meikipop for running app {appid}")
         return True
 

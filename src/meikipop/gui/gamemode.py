@@ -6,11 +6,15 @@
 - pauses scanning while Steam's own UI (or anything but this game) is in front: gamescope's stream
   shows whatever is on screen, and the library/Quick Access menu shouldn't be OCR'd
 - shows a sample lookup when the plugin touches gamemode-preview (its "Preview" button)
+- quits a few seconds after its game is gone (no longer in gamescope's GAMESCOPE_FOCUSABLE_APPS):
+  whoever started it (wrapper, plugin, a distrobox whose process outlives a killed `distrobox
+  enter`), meikipop never outlives its game. X-based on purpose: a Flatpak can't see host processes.
 """
 import logging
 import os
 
 from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication
 
 from meikipop.config.config import config, GAMEMODE_PATH
 from meikipop.gamescope import STEAM_UI_APPID, gamescope
@@ -20,6 +24,8 @@ logger = logging.getLogger(__name__)
 PREVIEW_PATH = os.path.join(os.path.dirname(GAMEMODE_PATH), 'gamemode-preview')
 PREVIEW_TEXT = '日本語を勉強しています'
 PREVIEW_SECONDS = 6
+GONE_TICKS = 3          # seconds without the game before quitting
+NEVER_SEEN_TICKS = 180  # give up if the game never shows a window
 
 
 class GameModeController:
@@ -31,6 +37,9 @@ class GameModeController:
         self.settings_mtime = self._mtime(GAMEMODE_PATH)
         self.preview_mtime = self._mtime(PREVIEW_PATH)
         self.last_focus = None
+        self.gone_ticks = 0
+        self.seen_game = False
+        self.unseen_ticks = 0
         self.timer = QTimer()
         self.timer.timeout.connect(self.tick)
         logger.info(f"Game Mode: this game is app {self.game_appid or '?'}")
@@ -58,11 +67,35 @@ class GameModeController:
 
     def tick(self):
         try:
+            if self._check_game_gone():
+                return
             self._check_settings()
             self._check_focus()
             self._check_preview()
         except Exception:
             logger.exception("Game Mode: housekeeping failed")
+
+    def _check_game_gone(self):
+        if self.game_appid is None:
+            return False
+        apps = gamescope().focusable_apps()
+        if apps is None:
+            return False
+        if self.game_appid in apps:
+            self.seen_game, self.gone_ticks = True, 0
+            return False
+        if self.seen_game:
+            self.gone_ticks += 1
+            reason = self.gone_ticks >= GONE_TICKS and "is gone"
+        else:  # still starting up (the window comes well after the process)
+            self.unseen_ticks += 1
+            reason = self.unseen_ticks >= NEVER_SEEN_TICKS and "never showed up"
+        if reason:
+            logger.info(f"Game Mode: app {self.game_appid} {reason} - quitting")
+            self.timer.stop()
+            QApplication.quit()
+            return True
+        return False
 
     def _check_settings(self):
         mtime = self._mtime(GAMEMODE_PATH)

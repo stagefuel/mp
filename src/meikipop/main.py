@@ -78,7 +78,12 @@ def run_gamescope_gui():
     shows overlay windows from there); input and the cursor stay on the game's display (DISPLAY).
     """
     from meikipop.gamescope import OVERLAY_DISPLAY, gamescope
+    from meikipop.gui.gamemode import GameModeController
     setup_logging()
+    appid = GameModeController._env_appid()
+    if appid and not gamescope().claim_instance(appid):
+        print(f"{APP_NAME}: Game Mode meikipop for app {appid} is already running - exiting.")
+        sys.exit(0)
     os.environ['QT_QPA_PLATFORM'] = 'xcb'
     os.environ.pop('WAYLAND_DISPLAY', None)
     shared_state = SharedState()
@@ -95,7 +100,6 @@ def run_gamescope_gui():
     lookup = Lookup(shared_state, popup_window)
     ocr_processor = OcrProcessor(shared_state, screen_manager)
     hit_scanner = HitScanner(shared_state, input_loop, screen_manager)
-    from meikipop.gui.gamemode import GameModeController
     game_mode = GameModeController(shared_state, popup_window, lookup)  # plugin settings, pause, preview
     for t in [lookup, hit_scanner, ocr_processor, screen_manager, input_loop]:
         t.start()

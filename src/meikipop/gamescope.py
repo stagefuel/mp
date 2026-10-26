@@ -103,6 +103,29 @@ class Gamescope:
             except Exception:
                 return None
 
+    def focusable_apps(self):
+        """App ids of the games gamescope currently has windows for (None if unreadable)."""
+        with self._lock:
+            try:
+                a = self._overlay.intern_atom('GAMESCOPE_FOCUSABLE_APPS')
+                prop = self._overlay.screen().root.get_full_property(a, self._X.AnyPropertyType)
+                return [int(v) for v in prop.value] if prop else []
+            except Exception:
+                return None
+
+    def claim_instance(self, appid):
+        """One Game Mode meikipop per game: owns the X selection MEIKIPOP_GAMESCOPE_<appid> on Steam's
+        display. Works across sandboxes (Flatpak has its own process list); the X server drops the claim
+        as soon as the owner dies. False if another instance holds it."""
+        with self._lock:
+            atom = self._overlay.intern_atom(f'MEIKIPOP_GAMESCOPE_{appid}')
+            if self._overlay.get_selection_owner(atom) != self._X.NONE:
+                return False
+            self._claim_window = self._overlay.screen().root.create_window(-10, -10, 1, 1, 0, self._overlay.screen().root_depth)
+            self._claim_window.set_selection_owner(atom, self._X.CurrentTime)
+            self._overlay.flush()
+            return self._overlay.get_selection_owner(atom) == self._claim_window
+
     # --- overlay window -------------------------------------------------------------
     def prepare_overlay_window(self, window_id):
         """Before the host is mapped: never focusable, overlay off until something is shown."""
