@@ -435,7 +435,8 @@ class Popup(QWidget):
                 separator = "; "
                 full_def_text_html = separator.join(def_text_parts_html)
                 def_ratio = self._display_len(separator.join(def_text_parts_calc)) / self.def_chars_per_line
-                max_ratio = max(max_ratio, def_ratio)
+                # the definitions follow the header on the same line
+                max_ratio = max(max_ratio, header_ratio + def_ratio)
             else:
                 separator = "<br>"
                 full_def_text_html = separator.join(def_text_parts_html)
