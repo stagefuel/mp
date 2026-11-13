@@ -1,17 +1,16 @@
 # lookup.py
 import logging
 import math
-import re
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 from meikipop.config.config import config, MAX_DICT_ENTRIES, DICT_PATH
-from meikipop.dictionary.customdict import Dictionary, WRITTEN_FORM_INDEX, READING_INDEX, FREQUENCY_INDEX, ENTRY_ID_INDEX, DEFAULT_FREQ
+from meikipop.dictionary.customdict import Dictionary, WRITTEN_FORM_INDEX, READING_INDEX, FREQUENCY_INDEX, ENTRY_ID_INDEX
 from meikipop.dictionary.deconjugator import Deconjugator, Form
+from meikipop.utils.japanese import DEFAULT_FREQ, KANJI_REGEX, hira_to_kata, kata_to_hira
 
-KANJI_REGEX = re.compile(r'[\u4e00-\u9faf]')
 JAPANESE_SEPARATORS = {
     "、", "。", "「", "」", "｛", "｝", "（", "）", "【", "】",
     "『", "』", "〈", "〉", "《", "》", "：", "・", "／",
@@ -99,7 +98,7 @@ class Lookup(threading.Thread):
                     self.popup_window.set_latest_data(lookup_result, (context_text, context_index))
                 else:
                     self.popup_window.set_latest_data(None)
-            except:
+            except Exception:
                 logger.exception("An unexpected error occurred in the lookup loop. Continuing...")
         logger.debug("Lookup thread stopped.")
 
@@ -289,12 +288,12 @@ class Lookup(threading.Thread):
         result = self.dictionary.lookup_map.get(text, [])
         if result:
             return list(result)
-        kata = self._hira_to_kata(text)
+        kata = hira_to_kata(text)
         if kata != text:
             result = self.dictionary.lookup_map.get(kata, [])
             if result:
                 return list(result)
-        hira = self._kata_to_hira(text)
+        hira = kata_to_hira(text)
         if hira != text:
             result = self.dictionary.lookup_map.get(hira, [])
             if result:
@@ -400,20 +399,3 @@ class Lookup(threading.Thread):
         priority -= len(form.process)
 
         return priority
-
-    def _hira_to_kata(self, text: str) -> str:
-        res = []
-        for c in text:
-            code = ord(c)
-            res.append(chr(code + 0x60) if 0x3041 <= code <= 0x3096 else c)
-        return ''.join(res)
-
-    def _kata_to_hira(self, text: str) -> str:
-        res = []
-        for c in text:
-            code = ord(c)
-            if   0x30A1 <= code <= 0x30F6: res.append(chr(code - 0x60))
-            elif code == 0x30FD:           res.append('\u309D')  # ヽ → ゝ
-            elif code == 0x30FE:           res.append('\u309E')  # ヾ → ゞ
-            else:                          res.append(c)
-        return ''.join(res)

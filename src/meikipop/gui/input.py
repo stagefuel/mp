@@ -37,6 +37,9 @@ class LinuxX11KeyboardController:
         self.hotkey_str = hotkey_str.lower()
         try:
             self.display = xlib_display.Display()
+            # the input loop, the popup timer and the hit scanner all poll this connection, and python-xlib
+            # connections must not be used from several threads at once
+            self._lock = threading.Lock()
             self._setup_keycodes()
         except (XError, Exception) as e:
             logger.critical("Could not connect to X server. Is DISPLAY environment variable set? Error: %s", e)
@@ -73,7 +76,8 @@ class LinuxX11KeyboardController:
 
     def is_hotkey_pressed(self) -> bool:
         try:
-            key_map = self.display.query_keymap()
+            with self._lock:
+                key_map = self.display.query_keymap()
             for group in self.modifier_groups:
                 group_is_pressed = False
                 for keycode in group:
@@ -198,6 +202,7 @@ class X11InputGrabber(threading.Thread):
 
 class InputLoop(threading.Thread):
     _mouse_controller = None
+    _mouse_lock = threading.Lock()  # get_mouse_pos is called from several threads, the controller isn't thread-safe
 
     def __init__(self, shared_state):
         super().__init__(daemon=True, name="InputLoop")
@@ -360,16 +365,16 @@ class InputLoop(threading.Thread):
 
                 last_mouse_pos = current_mouse_pos
                 hotkey_was_pressed = hotkey_is_pressed
-                self.hotkey_is_pressed = hotkey_is_pressed
-            except:
+            except Exception:
                 logger.exception("An unexpected error occurred in the input loop. Continuing...")
             finally:
                 time.sleep(0.01)
         logger.debug("Input thread stopped.")
 
     def is_virtual_hotkey_down(self):
-        return self.keyboard_controller.is_hotkey_pressed() or (
-                config.auto_scan_mode and config.auto_scan_mode_lookups_without_hotkey)
+        # config first: the hotkey poll is a round trip to the display server on linux
+        return (config.auto_scan_mode and config.auto_scan_mode_lookups_without_hotkey) \
+            or self.keyboard_controller.is_hotkey_pressed()
 
     def reapply_settings(self):
         logger.debug(f"InputLoop: Re-applying settings. New hotkey: '{config.hotkey}'.")
@@ -388,10 +393,11 @@ class InputLoop(threading.Thread):
             position = kwin_cursor.position
             if position is not None:
                 return position
-        try:
-            pos = InputLoop._mouse_controller.position
-        except Exception:
-            InputLoop._mouse_controller = mouse.Controller()
-            pos = InputLoop._mouse_controller.position
+        with InputLoop._mouse_lock:
+            try:
+                pos = InputLoop._mouse_controller.position
+            except Exception:
+                InputLoop._mouse_controller = mouse.Controller()
+                pos = InputLoop._mouse_controller.position
         # Convert floats to integers for QPoint compatibility
         return int(pos[0]), int(pos[1])

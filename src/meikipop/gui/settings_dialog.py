@@ -14,6 +14,7 @@ from meikipop.gui.input import InputLoop
 from meikipop.gui.popup import Popup
 from meikipop.ocr.ocr import OcrProcessor
 from meikipop.utils import autostart
+from meikipop.utils.paths import paths
 
 THEMES = {
     "Default": {
@@ -63,7 +64,7 @@ class SettingsDialog(QDialog):
         self.lookup = lookup
 
         self.setWindowTitle(f"{APP_NAME} Settings")
-        self.setWindowIcon(QIcon("icon.ico"))
+        self.setWindowIcon(QIcon(paths.get_resource_path('icon.ico')))
         self.setMinimumWidth(400)
 
         # Keep track of all form layouts to unify their spacing later

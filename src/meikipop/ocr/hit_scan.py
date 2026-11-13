@@ -46,7 +46,7 @@ class HitScanner(threading.Thread):
                                   or self.input_loop.keyboard_controller.is_hotkey_pressed())
                 self._last_mouse_pos = mouse_pos
                 self.shared_state.lookup_queue.put((hit_scan_result, user_triggered))
-            except:
+            except Exception:
                 logger.exception("An unexpected error occurred in the hit scan loop. Continuing...")
         logger.debug("HitScanner thread stopped.")
 

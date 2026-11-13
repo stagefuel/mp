@@ -10,10 +10,10 @@ from typing import Callable, List, Optional
 from meikipop.config.config import config
 from meikipop.ocr.interface import Paragraph
 from meikipop.texthooker.server import TexthookerServer
+from meikipop.utils.japanese import JAPANESE_REGEX
 
 logger = logging.getLogger(__name__)
 
-JAPANESE_REGEX = re.compile(r'[぀-ゟ゠-ヿ一-龯]')
 WHITESPACE_REGEX = re.compile(r'\s+')
 
 GONE_AFTER_SCANS = 2  # a sent line must be missing this many scans in a row before its text counts as new again

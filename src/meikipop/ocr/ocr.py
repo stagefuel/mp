@@ -47,7 +47,7 @@ class OcrProcessor(threading.Thread):
                 self.shared_state.hit_scan_queue.put((ocr_result, capture_mouse_pos))
                 if self.shared_state.text_feed:
                     self.shared_state.text_feed.process_scan(ocr_result)
-            except:
+            except Exception:
                 logger.exception("An unexpected error occurred in the ocr loop. Continuing...")
             finally:
                 if config.auto_scan_mode:
