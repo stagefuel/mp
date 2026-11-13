@@ -378,7 +378,7 @@ class Popup(QWidget):
                 header_definition = ', '.join(
                     entry.meanings) if config.show_examples or config.show_components else '[字]'
                 header_text_calc = f"{entry.character} {', '.join(entry.readings)} {header_definition}"
-                max_ratio = max(max_ratio, len(header_text_calc) / self.header_chars_per_line)
+                max_ratio = max(max_ratio, self._display_len(header_text_calc) / self.header_chars_per_line)
 
                 max_ratio = max(max_ratio, 0.7)
 
@@ -393,7 +393,7 @@ class Popup(QWidget):
 
             header_text_calc = entry.written_form
             if entry.reading: header_text_calc += f" [{entry.reading}]"
-            header_ratio = len(header_text_calc) / self.header_chars_per_line
+            header_ratio = self._display_len(header_text_calc) / self.header_chars_per_line
             max_ratio = max(max_ratio, header_ratio)
 
             # --- HTML construction ---
@@ -434,13 +434,13 @@ class Popup(QWidget):
             if config.compact_mode:
                 separator = "; "
                 full_def_text_html = separator.join(def_text_parts_html)
-                def_ratio = len(separator.join(def_text_parts_calc)) / self.def_chars_per_line
+                def_ratio = self._display_len(separator.join(def_text_parts_calc)) / self.def_chars_per_line
                 max_ratio = max(max_ratio, def_ratio)
             else:
                 separator = "<br>"
                 full_def_text_html = separator.join(def_text_parts_html)
                 for def_text_calc in def_text_parts_calc:
-                    def_ratio = len(def_text_calc) / self.def_chars_per_line
+                    def_ratio = self._display_len(def_text_calc) / self.def_chars_per_line
                     max_ratio = max(max_ratio, def_ratio)
 
             definitions_html_final = f'{" " if config.compact_mode else "<br>"}<span style="font-size:{config.font_size_definitions}px;">{full_def_text_html}</span>'

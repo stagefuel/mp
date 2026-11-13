@@ -241,7 +241,7 @@ class TrayIcon(QSystemTrayIcon):
                 if ctrl_type == 2:
                     try:
                         self.hide()
-                    except:
+                    except Exception:
                         pass
                     return False
                 return False
