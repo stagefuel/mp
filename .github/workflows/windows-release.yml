@@ -33,6 +33,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: run the tests
+        run: |
+          pip install pytest platformdirs
+          python -m pytest -q
+
       - name: build the dictionary
         run: |
           pip install requests lxml platformdirs
