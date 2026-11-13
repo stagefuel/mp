@@ -1,7 +1,6 @@
 import ctypes
 import logging
 import os
-import re
 import sys
 import time
 from contextlib import contextmanager
@@ -13,8 +12,8 @@ from .chrome_screen_ai_pb2 import VisualAnnotation
 
 from meikipop.ocr.interface import OcrProvider, Paragraph, Word, BoundingBox
 from meikipop.ocr.providers.postprocessing import group_lines_into_paragraphs
+from meikipop.utils.japanese import JAPANESE_REGEX
 
-JAPANESE_REGEX = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]')
 
 logger = logging.getLogger(__name__)
 

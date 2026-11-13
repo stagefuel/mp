@@ -33,6 +33,7 @@ class ScreenManager(threading.Thread):
         self.last_screenshot = None
         self.last_mouse_pos = None
         self.input_loop = input_loop
+        self._sct = None  # capture handle of the screenshot thread, kept open between screenshots
         if config.scan_region == "region":
             # with per-game areas on, the last area is reused instead of asking at every start
             if not (config.per_game_scan_area and self._restore_last_region()):
@@ -96,15 +97,26 @@ class ScreenManager(threading.Thread):
                 img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
                 self.shared_state.ocr_queue.put((img, capture_mouse_pos))
                 self.last_ocr_put_time = time.perf_counter()
-            except:
+            except Exception:
                 logger.exception("An unexpected error occurred in the screenshot loop. Continuing...")
                 self._sleep_and_handle_loop_exit(1)
         logger.debug("Screenshot thread stopped.")
 
     def take_screenshot(self):
-        with mss.mss() as sct:
-            sct_img = sct.grab(self.monitor)
-            return sct_img
+        # only called from the screenshot thread (mss handles belong to the thread that made them). Opening a
+        # handle costs a display connection on x11 and device contexts on windows, so it is reused.
+        if self._sct is None:
+            self._sct = mss.mss()
+        try:
+            return self._sct.grab(self.monitor)
+        except Exception:
+            # a stale handle (display changed, session restarted...): drop it, the next screenshot reopens it
+            sct, self._sct = self._sct, None
+            try:
+                sct.close()
+            except Exception:
+                pass
+            raise
 
     def set_scan_region(self):
         scan_rect = RegionSelector.get_region()

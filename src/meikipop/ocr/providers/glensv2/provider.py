@@ -3,7 +3,6 @@ import io
 import logging
 import math
 import random
-import re
 import time
 from typing import Optional, List, Tuple
 
@@ -15,8 +14,8 @@ from meikipop.ocr.interface import OcrProvider, Paragraph, Word, BoundingBox
 from meikipop.ocr.providers.glensv2.lens_betterproto import LensOverlayServerRequest, WritingDirection, \
     LensOverlayServerResponse
 from meikipop.ocr.providers.postprocessing import group_lines_into_paragraphs
+from meikipop.utils.japanese import JAPANESE_REGEX
 
-JAPANESE_REGEX = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]')
 
 logger = logging.getLogger(__name__)
 

@@ -182,8 +182,14 @@ class Config:
                 val = getattr(self, key)
                 parser.set(section, key, str(val).lower() if isinstance(val, bool) else str(val))
 
-        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+        # write to a temp file and swap it in, so a crash mid-write can't leave an empty config behind
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        tmp_path = CONFIG_PATH + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             parser.write(f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, CONFIG_PATH)
         logger.info(f"Settings saved to '{CONFIG_PATH}'.")
 
 

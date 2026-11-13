@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meikipop"
-version = "2.0.6"
+dynamic = ["version"]
 description = "Universal Japanese OCR popup dictionary"
 readme = "README.md"
 license = "GPL-3.0"
@@ -22,6 +22,8 @@ dependencies = [
     "protobuf>=6.33.1",
     "websockets>=15.0.1",
     "meikiocr>=0.3.5",
+    "numpy",  # used directly by the meikiocr provider (also a meikiocr dependency)
+    "opencv-python-headless",  # same
     "onnxruntime==1.20.1; sys_platform == 'win32'",
     "keyboard~=0.13.5; sys_platform == 'win32'",
     "python-xlib~=0.33; sys_platform == 'linux'",
@@ -38,6 +40,15 @@ meikipop = "meikipop.main:main"
 build-dict = "meikipop.scripts.build_dictionary:main"
 import-yomitan-dict-html = "meikipop.scripts.import_yomitan_dict_html:main"
 import-yomitan-dict-text = "meikipop.scripts.import_yomitan_dict_text:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "meikipop.__version__"}
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
