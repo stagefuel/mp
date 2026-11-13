@@ -16,8 +16,6 @@ logger = logging.getLogger(__name__)
 
 DICT_URL = "https://github.com/rtr46/meikipop/releases/download/dictionary-latest/dictionary.zip"
 
-DEFAULT_FREQ = 999_999
-
 # MapEntry tuple field indices. value: (written_form, reading, freq, entry_id)
 WRITTEN_FORM_INDEX = 0
 READING_INDEX = 1

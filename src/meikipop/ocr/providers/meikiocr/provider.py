@@ -1,5 +1,4 @@
 import logging
-import re
 from typing import List, Optional
 
 import numpy as np
@@ -13,6 +12,7 @@ from meikiocr import ocr as meikiocr_module
 from meikipop.ocr.interface import BoundingBox, OcrProvider, Paragraph, Word
 from meikipop.ocr.providers.meikiocr import vertical
 from meikipop.ocr.providers.postprocessing import group_lines_into_paragraphs
+from meikipop.utils.japanese import JAPANESE_REGEX
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 DET_CONFIDENCE_THRESHOLD = 0.5
 REC_CONFIDENCE_THRESHOLD = 0.1
 
-JAPANESE_REGEX = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]')
 
 # the recognition model reads some bound compounds (characters that almost only occur together) in reverse;
 # meikiocr fixes the ones it knows about in SWAPPED_PAIRS, these are ones found since
